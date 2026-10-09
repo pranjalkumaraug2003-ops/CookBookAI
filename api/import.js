@@ -9,7 +9,7 @@ import { draftToRecipe } from './_lib/convert.js';
 import { parseRecipeText } from '../parse-text.js';
 import { normalizeRecipe } from '../recipe.js';
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 180 };
 
 const YT = /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([\w-]{11})/;
 
@@ -82,7 +82,8 @@ export async function importRecipe(input, { trace } = {}) {
     const meta = await youtubeMeta(url);
     const source = { kind: 'youtube', url, videoId, author: meta.author || '' };
     try {
-      const { draft, model, format } = await draftWithGemini({ youtubeUrl: url, title: meta.title }, { trace });
+      // Watching a whole cooking video takes the model one to two minutes.
+      const { draft, model, format } = await draftWithGemini({ youtubeUrl: url, title: meta.title }, { trace, timeoutMs: 150000 });
       const recipe = draftToRecipe(draft, { source, warnings });
       if (!recipe.steps.some((s) => s.video)) warnings.push('The steps have no video times, so the video will play straight through. You can add times on each step.');
       return { recipe, warnings, method: `video + ${model}${format !== 'schema-lite' ? ` (${format})` : ''}` };

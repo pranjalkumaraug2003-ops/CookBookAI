@@ -97,7 +97,7 @@ export function libraryScreens({ S, render, openRecipe, store, log }) {
     ? (ui.health.ai ? 'An AI model (Google Gemini) drafts the pots, timers and cues. You check everything before cooking.' : 'This server has no AI model set up, so simple rules read the recipe. Links to videos need the model.')
     : 'The steps are mapped to pots, timers and doneness cues.');
   const privText = () => `The link or text you paste is sent to this app's server${ui.health && ui.health.ai ? ' and to Google Gemini' : ''} to read the recipe. Nothing from your kitchen (camera, mic, voice) is sent with it.`;
-  const STAGES = [[0, 'Reading the link'], [3000, 'Finding the recipe'], [8000, 'Mapping steps to pots and timers'], [20000, 'Watching the video for step times'], [40000, 'Almost there']];
+  const STAGES = [[0, 'Reading the link'], [3000, 'Finding the recipe'], [8000, 'Mapping steps to pots and timers'], [20000, 'Watching the video for step times'], [60000, 'Still watching: long videos take up to two minutes'], [120000, 'Almost there']];
 
   function addView() {
     checkHealth();
@@ -105,7 +105,7 @@ export function libraryScreens({ S, render, openRecipe, store, log }) {
     const isUrl = /^https?:\/\/\S+$/i.test(ui.importText.trim());
     const isYt = isUrl && youtubeId(ui.importText.trim());
     const elapsed = Date.now() - ui.started;
-    const stage = STAGES.filter(([t]) => elapsed >= t && (isYt || t !== 20000)).pop();
+    const stage = STAGES.filter(([t]) => elapsed >= t && (isYt || (t !== 20000 && t !== 60000))).pop();
     return `<div class="add">
       <div class="lib-head">
         <div><button type="button" class="crumb-btn" data-tap="library">${I.left(18, '#171B20', 2.4)}<span>Recipes</span></button><h1>Add a recipe</h1></div>
@@ -121,7 +121,7 @@ export function libraryScreens({ S, render, openRecipe, store, log }) {
           </div>
           <div id="codeSlot">${ui.health && ui.health.needsCode ? `<label class="codeline">Access code for this server <input type="password" data-ui="code" value="${esc(ui.code)}" autocomplete="off"></label>` : ''}</div>
           ${ui.status === 'error' ? `<div class="err">${I.warn(20, '#AA3606')}<div>${esc(ui.message)}</div></div>` : ''}
-          ${busy && isYt ? '<div class="hintline">Videos take 20 to 60 seconds: the model watches it to find where each step starts.</div>' : ''}
+          ${busy && isYt ? '<div class="hintline">Videos take one to two minutes: the model watches the whole video to find where each step starts.</div>' : ''}
         </div>
         <div class="addside">
           <div class="how"><div class="k">What happens</div>
@@ -148,8 +148,9 @@ export function libraryScreens({ S, render, openRecipe, store, log }) {
     const ticker = setInterval(() => { if (S.screen === 'add' && ui.status === 'loading') render(); else clearInterval(ticker); }, 1000);
     render();
     importCtl = new AbortController();
-    const timeout = setTimeout(() => importCtl.abort(), 90000);
     const isUrl = /^https?:\/\/\S+$/i.test(input);
+    // A video takes the model one to two minutes to watch; text takes seconds.
+    const timeout = setTimeout(() => importCtl.abort(), isUrl && youtubeId(input) ? 175000 : 90000);
     try {
       const res = await fetch(`${API}/api/import`, { method: 'POST', headers: { 'content-type': 'application/json', ...(ui.code ? { 'x-import-code': ui.code } : {}) }, body: JSON.stringify({ input }), signal: importCtl.signal });
       const ct = res.headers.get('content-type') || '';

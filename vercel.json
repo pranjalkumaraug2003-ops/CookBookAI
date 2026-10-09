@@ -31,7 +31,7 @@
   ],
   "functions": {
     "api/import.js": {
-      "maxDuration": 60
+      "maxDuration": 180
     }
   }
 }
