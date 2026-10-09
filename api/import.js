@@ -59,10 +59,10 @@ async function youtubeMeta(url) {
 // Text through the model if there is one, through the rules if not (or if the model fails).
 async function fromText(text, source, warnings, { structured = false } = {}) {
   try {
-    const { draft, model } = await draftWithGemini({ text });
-    return { recipe: draftToRecipe(draft, { source, warnings }), method: `${structured ? 'recipe card + ' : ''}${model}` };
+    const { draft, model, format } = await draftWithGemini({ text });
+    return { recipe: draftToRecipe(draft, { source, warnings }), method: `${structured ? 'recipe card + ' : ''}${model}${format !== 'schema' ? ` (${format})` : ''}` };
   } catch (e) {
-    if (e.code !== 'NO_KEY') warnings.push(`The AI step failed (${e.message}), so simple rules made this draft. Check pots and timers carefully.`);
+    if (e.code !== 'NO_KEY') warnings.push(`The AI step failed (${e.message}${e.details ? `: ${String(e.details).slice(0, 160)}` : ''}), so simple rules made this draft. Check pots and timers carefully.`);
     else warnings.push('Made with simple rules, not AI. Check pots and timers carefully.');
     const draft = parseRecipeText(text, { source });
     return { recipe: normalizeRecipe({ ...draft, source }, { warnings }), method: structured ? 'recipe card + rules' : 'rules' };
@@ -82,13 +82,14 @@ export async function importRecipe(input) {
     const meta = await youtubeMeta(url);
     const source = { kind: 'youtube', url, videoId, author: meta.author || '' };
     try {
-      const { draft, model } = await draftWithGemini({ youtubeUrl: url, title: meta.title });
+      const { draft, model, format } = await draftWithGemini({ youtubeUrl: url, title: meta.title });
       const recipe = draftToRecipe(draft, { source, warnings });
       if (!recipe.steps.some((s) => s.video)) warnings.push('The steps have no video times, so the video will play straight through. You can add times on each step.');
-      return { recipe, warnings, method: `video + ${model}` };
+      return { recipe, warnings, method: `video + ${model}${format !== 'schema' ? ` (${format})` : ''}` };
     } catch (e) {
       if (e.code === 'NO_KEY') throw new UserError('Reading a video needs the AI model, which is not set up on this server. Paste the recipe text from the video description instead.', 'needs_model', 501);
       if (e instanceof UserError) throw e;
+      if (e.status === 429) throw new UserError('The AI model has reached its free limit for now. Try again in a minute, or paste the recipe text from the video description.', 'model_quota', 429);
       throw new UserError(`The video could not be read (${e.message}). Paste the recipe text from its description instead.`, 'model_failed', 502);
     }
   }

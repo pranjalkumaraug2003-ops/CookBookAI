@@ -35,6 +35,8 @@ check('ingredient: grams scale as weight', x.qty === 200 && x.unit === 'g' && x.
 const rajma = parseRecipeText(fs.readFileSync(path.join(dir, 'chatgpt-rajma.txt'), 'utf8'));
 check('rules: title from a chatbot opening line', rajma.title === 'Rajma Chawal', rajma.title);
 check('rules: servings', rajma.baseServings === 4, rajma.baseServings);
+const r2 = parseRecipeText('Ingredients\n- 1 cup dal\nMethod\n1. Pressure cook the dal with water for 3 whistles.\n2. Heat ghee in a kadai and fry the onions.');
+check('rules: "pressure cook" and whistles mean the cooker', r2.steps[0].pot === 'cooker' && r2.pots[0].vessel === 'cooker', r2.steps[0]);
 check('rules: three pots, cooker first', rajma.pots.map((p) => p.vessel).join() === 'cooker,kadai,pot', rajma.pots);
 const w = rajma.steps[0].onEnter && rajma.steps[0].onEnter[0];
 check('rules: "6 whistles" becomes a whistle timer', w && w.type === 'whistle' && w.target === 6, w);

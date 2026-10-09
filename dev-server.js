@@ -17,6 +17,7 @@ if (process.env.MOCK_GEMINI === '1') {
   process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'mock';
   process.env.GEMINI_BASE_URL = `http://localhost:${port}/__mock/gemini`;
   process.env.ALLOW_PRIVATE_FETCH = '1';
+  process.env.IMPORT_LIMIT = process.env.IMPORT_LIMIT || '100000'; // tests import many times from one address
 }
 
 const server = http.createServer(async (req, res) => {

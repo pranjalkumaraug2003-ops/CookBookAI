@@ -41,8 +41,17 @@ export function libraryScreens({ S, render, openRecipe, store, log }) {
   function checkHealth() {
     if (ui.health) return;
     ui.health = { checking: true };
-    fetch(`${API}/api/health`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((j) => { ui.health = j || { ok: false }; if (S.screen === 'add') render(); })
-      .catch(() => { ui.health = { ok: false }; if (S.screen === 'add') render(); });
+    // The answer only changes two lines, so only they are updated: re-rendering would steal focus from the text box.
+    const apply = (j) => {
+      ui.health = j || { ok: false };
+      const how = document.getElementById('howAi');
+      const priv = document.getElementById('privAi');
+      if (how) how.textContent = howText();
+      if (priv) priv.textContent = privText();
+      const code = document.getElementById('codeSlot');
+      if (code && ui.health.needsCode && !code.firstChild) render();
+    };
+    fetch(`${API}/api/health`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then(apply).catch(() => apply(null));
   }
 
   // ---------------------------------------------------------------- library
@@ -84,6 +93,10 @@ export function libraryScreens({ S, render, openRecipe, store, log }) {
   }
 
   // ---------------------------------------------------------------- add
+  const howText = () => (ui.health && !ui.health.checking
+    ? (ui.health.ai ? 'An AI model (Google Gemini) drafts the pots, timers and cues. You check everything before cooking.' : 'This server has no AI model set up, so simple rules read the recipe. Links to videos need the model.')
+    : 'The steps are mapped to pots, timers and doneness cues.');
+  const privText = () => `The link or text you paste is sent to this app's server${ui.health && ui.health.ai ? ' and to Google Gemini' : ''} to read the recipe. Nothing from your kitchen (camera, mic, voice) is sent with it.`;
   const STAGES = [[0, 'Reading the link'], [3000, 'Finding the recipe'], [8000, 'Mapping steps to pots and timers'], [20000, 'Watching the video for step times'], [40000, 'Almost there']];
 
   function addView() {
@@ -93,10 +106,6 @@ export function libraryScreens({ S, render, openRecipe, store, log }) {
     const isYt = isUrl && youtubeId(ui.importText.trim());
     const elapsed = Date.now() - ui.started;
     const stage = STAGES.filter(([t]) => elapsed >= t && (isYt || t !== 20000)).pop();
-    const ai = ui.health && ui.health.ai;
-    const how = ui.health && !ui.health.checking
-      ? (ai ? 'An AI model (Google Gemini) drafts the pots, timers and cues. You check everything before cooking.' : 'This server has no AI model set up, so simple rules read the recipe. Links to videos need the model.')
-      : '';
     return `<div class="add">
       <div class="lib-head">
         <div><button type="button" class="crumb-btn" data-tap="library">${I.left(18, '#171B20', 2.4)}<span>Recipes</span></button><h1>Add a recipe</h1></div>
@@ -110,7 +119,7 @@ export function libraryScreens({ S, render, openRecipe, store, log }) {
             ${busy ? '<button type="button" class="ghost" data-tap="cancel-import">Cancel</button>' : '<button type="button" class="ghost" data-tap="sample">Try a sample</button>'}
             <button type="button" class="ghost" data-tap="scratch" ${busy ? 'disabled' : ''}>Write one by hand</button>
           </div>
-          ${ui.health && ui.health.needsCode ? `<label class="codeline">Access code for this server <input type="password" data-ui="code" value="${esc(ui.code)}" autocomplete="off"></label>` : ''}
+          <div id="codeSlot">${ui.health && ui.health.needsCode ? `<label class="codeline">Access code for this server <input type="password" data-ui="code" value="${esc(ui.code)}" autocomplete="off"></label>` : ''}</div>
           ${ui.status === 'error' ? `<div class="err">${I.warn(20, '#AA3606')}<div>${esc(ui.message)}</div></div>` : ''}
           ${busy && isYt ? '<div class="hintline">Videos take 20 to 60 seconds: the model watches it to find where each step starts.</div>' : ''}
         </div>
@@ -118,11 +127,11 @@ export function libraryScreens({ S, render, openRecipe, store, log }) {
           <div class="how"><div class="k">What happens</div>
             <ol>
               <li>If the page has a recipe card, it is read directly.</li>
-              <li>${how || 'The steps are mapped to pots, timers and doneness cues.'}</li>
+              <li id="howAi">${esc(howText())}</li>
               <li>You review it: fix a pot, a timer or a step, then save.</li>
             </ol>
           </div>
-          <div class="how"><div class="k">Privacy</div><div>The link or text you paste is sent to this app's server${ai ? ' and to Google Gemini' : ''} to read the recipe. Nothing from your kitchen (camera, mic, voice) is sent with it.</div></div>
+          <div class="how"><div class="k">Privacy</div><div id="privAi">${esc(privText())}</div></div>
           ${S.online ? '' : `<div class="err">${I.wifiOff(20, '#AA3606')}<div>You're offline. Pasted text can still be read with simple rules; links need a connection.</div></div>`}
         </div>
       </div>

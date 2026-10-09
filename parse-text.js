@@ -25,7 +25,7 @@ const HINDI = {
 };
 
 const VESSEL_PATTERNS = [
-  ['cooker', /\b(pressure[- ]?cooker|cooker|instant pot)\b/i],
+  ['cooker', /\b(pressure[- ]?cook(?:er|ed|ing)?|cooker|instant pot|whistles?|seeti)\b/i],
   ['kadai', /\b(kadai|kadhai|karahi|wok)\b/i],
   ['tawa', /\b(tawa|tava|griddle)\b/i],
   ['oven', /\b(oven|bake|baking tray|preheat)\b/i],

@@ -127,8 +127,16 @@ async function callModel(model, body, key, timeoutMs) {
     let data = null;
     try { data = JSON.parse(raw); } catch (_) { /* not JSON */ }
     if (!res.ok) {
-      const msg = (data && data.error && data.error.message) || raw.slice(0, 200);
-      throw new ModelError(msg, { status: res.status, code: data && data.error && data.error.status });
+      const err = (data && data.error) || {};
+      // Google puts the useful part ("which field is invalid") in error.details; keep it for the logs.
+      const details = (Array.isArray(err.details) ? err.details : []).flatMap((d) => [
+        ...(Array.isArray(d.fieldViolations) ? d.fieldViolations.map((v) => `${v.field || ''} ${v.description || ''}`.trim()) : []),
+        d.reason || '', d.message || '',
+      ]).filter(Boolean).join('; ');
+      const msg = err.message || raw.slice(0, 200);
+      const e = new ModelError(msg, { status: res.status, code: err.status });
+      e.details = details;
+      throw e;
     }
     const cand = data && data.candidates && data.candidates[0];
     const text = cand && cand.content && Array.isArray(cand.content.parts) ? cand.content.parts.map((p) => p.text || '').join('') : '';
@@ -157,37 +165,47 @@ export async function draftWithGemini(input, { timeoutMs = 50000 } = {}) {
   } else {
     parts.push({ text: `Recipe source:\n"""\n${String(input.text).slice(0, 30000)}\n"""` });
   }
-  const base = {
-    systemInstruction: { parts: [{ text: SYSTEM }] },
-    contents: [{ role: 'user', parts }],
-    generationConfig: { temperature: 0.2, responseMimeType: 'application/json', responseSchema: toOpenApi(DRAFT_SCHEMA) },
+  // Request formats, strictest first. The API has changed shape over time and models differ in what they
+  // accept, so a request it calls "invalid" is retried in a simpler format. The answer is checked against the
+  // same rules on the server either way (convert.js), so a looser format never means a looser result.
+  const schemaNote = { text: `Answer with JSON only, matching this JSON Schema:\n${JSON.stringify(DRAFT_SCHEMA)}` };
+  const FORMATS = [
+    { name: 'schema', cfg: { responseMimeType: 'application/json', responseSchema: toOpenApi(DRAFT_SCHEMA) }, extra: [] },
+    { name: 'json-schema', cfg: { responseMimeType: 'application/json', responseJsonSchema: DRAFT_SCHEMA }, extra: [] },
+    { name: 'json', cfg: { responseMimeType: 'application/json' }, extra: [schemaNote] },
+    { name: 'plain', cfg: {}, extra: [schemaNote] },
+  ];
+  const bodyFor = (fmt, { media = true } = {}) => {
+    const generationConfig = { temperature: 0.2, ...fmt.cfg };
+    if (input.youtubeUrl && media) generationConfig.mediaResolution = 'MEDIA_RESOLUTION_LOW';
+    return { systemInstruction: { parts: [{ text: SYSTEM }] }, contents: [{ role: 'user', parts: [...parts, ...fmt.extra] }], generationConfig };
   };
-  if (input.youtubeUrl) base.generationConfig.mediaResolution = 'MEDIA_RESOLUTION_LOW';
 
   let lastErr = null;
+  const tried = [];
   for (const model of MODELS()) {
-    let body = base;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    let media = true;
+    for (let f = 0; f < FORMATS.length; f++) {
+      const fmt = FORMATS[f];
       try {
-        const draft = await callModel(model, body, key, timeoutMs);
-        return { draft, model };
+        const draft = await callModel(model, bodyFor(fmt, { media }), key, timeoutMs);
+        return { draft, model, format: fmt.name };
       } catch (e) {
         lastErr = e;
-        const msg = String(e.message || '').toLowerCase();
-        // An older model or API version that rejects one option: retry once without it.
-        if (e.status === 400 && msg.includes('media') && body.generationConfig.mediaResolution) { body = { ...body, generationConfig: { ...body.generationConfig } }; delete body.generationConfig.mediaResolution; continue; }
-        if (e.status === 400 && msg.includes('schema') && body.generationConfig.responseSchema) {
-          body = { ...body, generationConfig: { ...body.generationConfig } };
-          delete body.generationConfig.responseSchema;
-          body.contents = [{ role: 'user', parts: [...parts, { text: `Answer with JSON matching this JSON Schema only:\n${JSON.stringify(DRAFT_SCHEMA)}` }] }];
-          continue;
-        }
-        if (e.code === 'BAD_JSON' && attempt === 0) continue;
+        tried.push(`${model}/${fmt.name}${media ? '' : '/no-media'}: ${e.status || ''} ${e.message}${e.details ? ` (${e.details})` : ''}`);
+        console.error('gemini', tried[tried.length - 1]);
+        const invalid = e.status === 400 && !/model/i.test(`${e.message} ${e.details || ''}`) && !/api key/i.test(e.message);
+        if (invalid && input.youtubeUrl && media && /media/i.test(`${e.message} ${e.details || ''}`)) { media = false; f--; continue; }
+        if (invalid) continue; // try the next, simpler format
+        if (e.code === 'BAD_JSON' && f < FORMATS.length - 1) continue;
         break;
       }
     }
-    // Model not available for this key: try the next one. Anything else is final.
-    if (!(lastErr && (lastErr.status === 404 || (lastErr.status === 400 && /model/i.test(lastErr.message))))) break;
+    // Try the next model when this one doesn't exist for the key, is out of quota (free-tier limits are per
+    // model, so a smaller model often still has room) or is overloaded. Anything else is final.
+    const next = lastErr && (lastErr.status === 404 || lastErr.status === 429 || lastErr.status === 503 || (lastErr.status === 400 && /model/i.test(`${lastErr.message} ${lastErr.details || ''}`)));
+    if (!next) break;
   }
+  if (lastErr) lastErr.tried = tried;
   throw lastErr || new ModelError('The model could not be reached.', { status: 502 });
 }
