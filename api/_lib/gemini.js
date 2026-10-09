@@ -111,6 +111,7 @@ Rules:
 - One step is one action at one place. Split long steps; merge trivial ones. Keep the source's order.
 - Headlines: imperative, verb first, at most 6 words. Details: at most 25 words.
 - Every quantity in a headline, detail or checklist is a {key} placeholder that matches an ingredient key, so it can be rescaled. Never write a number for an ingredient amount directly.
+- Placeholders are only for ingredient amounts. Write whistle counts, minutes and temperatures as plain numbers, never as {placeholders}.
 - Never invent quantities, times or whistle counts the source does not give. Use null and note it in problems.
 - Timers: "cook 10 minutes" is a countdown; "8 to 10 minutes till golden" is a checkin with minutes 8 and a cue; pressure cooking is whistles. A timer belongs to the step's pot; a soak or marinade timer belongs to the pot that will later cook that ingredient.
 - A step that opens a pressure cooker after its whistles sets waitsForPot to that cooker's pot key.

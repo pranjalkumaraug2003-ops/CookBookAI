@@ -38,13 +38,19 @@ export function draftToRecipe(draft, { source, warnings = [] } = {}) {
   }
   const byName = (word) => Object.entries(ingredients).find(([, v]) => v.name.toLowerCase() === word.toLowerCase() || v.aliases.includes(word.toLowerCase()));
   let badPlaceholders = 0;
-  const fixText = (t) => String(t || '').replace(/\{([^{}]{1,40})\}/g, (m, k) => {
+  const lowerKeys = new Map(Object.keys(ingredients).map((k) => [k.toLowerCase(), k]));
+  // Placeholders the model gets wrong: {whistles} or {minutes} (the step's own numbers), a key in the wrong
+  // case, or an ingredient's name instead of its key.
+  const fixText = (t, step = {}) => String(t || '').replace(/\{([^{}]{1,40})\}/g, (m, k) => {
     if (ingredients[k]) return m;
+    if (/^(whistles?|count)$/i.test(k) && Number.isInteger(step.whistles)) return String(step.whistles);
+    if (/^(minutes?|mins?|time)$/i.test(k) && typeof step.minutes === 'number') return String(step.minutes);
     if (keyMap.has(k)) return `{${keyMap.get(k)}}`;
-    const hit = byName(k);
+    if (lowerKeys.has(k.toLowerCase())) return `{${lowerKeys.get(k.toLowerCase())}}`;
+    const hit = byName(k) || byName(k.replace(/([a-z])([A-Z])/g, '$1 $2'));
     if (hit) return `{${hit[0]}}`;
     badPlaceholders++;
-    return k;
+    return k.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
   });
 
   const steps = [];
@@ -54,10 +60,10 @@ export function draftToRecipe(draft, { source, warnings = [] } = {}) {
   for (const s of Array.isArray(d.steps) ? d.steps : []) {
     if (!s || !s.headline) continue;
     const pot = potFor(s.pot);
-    const headline = clampWords(fixText(s.headline), 9);
-    const st = { place: String(s.place || (pot ? potName(pot) : 'Counter')).slice(0, 24), pot, headline, detail: fixText(s.detail).slice(0, 260) };
+    const headline = clampWords(fixText(s.headline, s), 9);
+    const st = { place: String(s.place || (pot ? potName(pot) : 'Counter')).slice(0, 24), pot, headline, detail: fixText(s.detail, s).slice(0, 260) };
     if (s.cue) st.cue = { kind: 'text', text: clampWords(s.cue, 8) };
-    if (Array.isArray(s.checklist) && s.checklist.length > 1) st.checklist = s.checklist.slice(0, 6).map((c) => clampWords(fixText(c), 7));
+    if (Array.isArray(s.checklist) && s.checklist.length > 1) st.checklist = s.checklist.slice(0, 6).map((c) => clampWords(fixText(c, s), 7));
     if (s.cannotPause) st.fast = true;
     const slot = pot || null;
     const label = slot ? potName(slot) : 'Timer';
