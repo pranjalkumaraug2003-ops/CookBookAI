@@ -185,8 +185,10 @@ export async function draftWithGemini(input, { timeoutMs = 50000, trace } = {}) 
   // same rules on the server either way (convert.js), so a looser format never means a looser result.
   const schemaNote = { text: `Answer with JSON only, matching this JSON Schema:\n${JSON.stringify(DRAFT_SCHEMA)}` };
   const FORMATS = [
-    { name: 'schema', cfg: { responseMimeType: 'application/json', responseSchema: toOpenApi(DRAFT_SCHEMA) }, extra: [] },
+    // Live testing (Oct 2026): Gemini 3.5 and 3.8 Flash refuse minItems/maxItems and nullable lists as
+    // "invalid argument", so the slim schema goes first and the full one is the fallback.
     { name: 'schema-lite', cfg: { responseMimeType: 'application/json', responseSchema: toOpenApi(liteSchema(DRAFT_SCHEMA)) }, extra: [] },
+    { name: 'schema', cfg: { responseMimeType: 'application/json', responseSchema: toOpenApi(DRAFT_SCHEMA) }, extra: [] },
     { name: 'json-schema', cfg: { responseMimeType: 'application/json', responseJsonSchema: DRAFT_SCHEMA }, extra: [] },
     { name: 'json', cfg: { responseMimeType: 'application/json' }, extra: [schemaNote] },
     { name: 'plain', cfg: {}, extra: [schemaNote] },

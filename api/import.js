@@ -60,7 +60,7 @@ async function youtubeMeta(url) {
 async function fromText(text, source, warnings, { structured = false, trace } = {}) {
   try {
     const { draft, model, format } = await draftWithGemini({ text }, { trace });
-    return { recipe: draftToRecipe(draft, { source, warnings }), method: `${structured ? 'recipe card + ' : ''}${model}${format !== 'schema' ? ` (${format})` : ''}` };
+    return { recipe: draftToRecipe(draft, { source, warnings }), method: `${structured ? 'recipe card + ' : ''}${model}${format !== 'schema-lite' ? ` (${format})` : ''}` };
   } catch (e) {
     if (e.code !== 'NO_KEY') warnings.push(`The AI step failed (${e.message}${e.details ? `: ${String(e.details).slice(0, 160)}` : ''}), so simple rules made this draft. Check pots and timers carefully.`);
     else warnings.push('Made with simple rules, not AI. Check pots and timers carefully.');
@@ -85,7 +85,7 @@ export async function importRecipe(input, { trace } = {}) {
       const { draft, model, format } = await draftWithGemini({ youtubeUrl: url, title: meta.title }, { trace });
       const recipe = draftToRecipe(draft, { source, warnings });
       if (!recipe.steps.some((s) => s.video)) warnings.push('The steps have no video times, so the video will play straight through. You can add times on each step.');
-      return { recipe, warnings, method: `video + ${model}${format !== 'schema' ? ` (${format})` : ''}` };
+      return { recipe, warnings, method: `video + ${model}${format !== 'schema-lite' ? ` (${format})` : ''}` };
     } catch (e) {
       if (e.code === 'NO_KEY') throw new UserError('Reading a video needs the AI model, which is not set up on this server. Paste the recipe text from the video description instead.', 'needs_model', 501);
       if (e instanceof UserError) throw e;
