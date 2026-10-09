@@ -74,6 +74,19 @@ export const DRAFT_SCHEMA = {
   required: ['title', 'servings', 'totalMinutes', 'pots', 'ingredients', 'steps', 'servingLine', 'problems'],
 };
 
+// A slimmer version some models accept when the full one is refused: no item limits, lists never null.
+export function liteSchema(s) {
+  if (Array.isArray(s)) return s.map(liteSchema);
+  if (!s || typeof s !== 'object') return s;
+  const out = {};
+  for (const [k, v] of Object.entries(s)) {
+    if (k === 'minItems' || k === 'maxItems') continue;
+    if (k === 'type' && Array.isArray(v) && v.includes('array')) { out.type = 'array'; continue; }
+    out[k] = k === 'properties' ? Object.fromEntries(Object.entries(v).map(([pk, pv]) => [pk, liteSchema(pv)])) : liteSchema(v);
+  }
+  return out;
+}
+
 export function toOpenApi(s) {
   if (Array.isArray(s)) return s.map(toOpenApi);
   if (!s || typeof s !== 'object') return s;
@@ -154,6 +167,8 @@ async function callModel(model, body, key, timeoutMs) {
   }
 }
 
+let preferred = null;
+
 // input: { text } or { youtubeUrl, title }
 export async function draftWithGemini(input, { timeoutMs = 50000, trace } = {}) {
   const key = process.env.GEMINI_API_KEY;
@@ -171,6 +186,7 @@ export async function draftWithGemini(input, { timeoutMs = 50000, trace } = {}) 
   const schemaNote = { text: `Answer with JSON only, matching this JSON Schema:\n${JSON.stringify(DRAFT_SCHEMA)}` };
   const FORMATS = [
     { name: 'schema', cfg: { responseMimeType: 'application/json', responseSchema: toOpenApi(DRAFT_SCHEMA) }, extra: [] },
+    { name: 'schema-lite', cfg: { responseMimeType: 'application/json', responseSchema: toOpenApi(liteSchema(DRAFT_SCHEMA)) }, extra: [] },
     { name: 'json-schema', cfg: { responseMimeType: 'application/json', responseJsonSchema: DRAFT_SCHEMA }, extra: [] },
     { name: 'json', cfg: { responseMimeType: 'application/json' }, extra: [schemaNote] },
     { name: 'plain', cfg: {}, extra: [schemaNote] },
@@ -183,14 +199,18 @@ export async function draftWithGemini(input, { timeoutMs = 50000, trace } = {}) 
 
   let lastErr = null;
   const tried = [];
-  for (const model of MODELS()) {
+  // Start from the model and format that worked last time on this server instance.
+  const models = preferred ? [preferred.model, ...MODELS().filter((m) => m !== preferred.model)] : MODELS();
+  for (const model of models) {
     let media = true;
-    for (let f = 0; f < FORMATS.length; f++) {
-      const fmt = FORMATS[f];
+    const order = preferred && preferred.model === model ? [FORMATS.find((x) => x.name === preferred.format), ...FORMATS.filter((x) => x.name !== preferred.format)] : FORMATS;
+    for (let f = 0; f < order.length; f++) {
+      const fmt = order[f];
       try {
         const t0 = Date.now();
         const draft = await callModel(model, bodyFor(fmt, { media }), key, timeoutMs);
         if (trace) trace.push(`${model}/${fmt.name}: ok in ${Date.now() - t0} ms`);
+        preferred = { model, format: fmt.name };
         return { draft, model, format: fmt.name };
       } catch (e) {
         lastErr = e;
@@ -200,7 +220,7 @@ export async function draftWithGemini(input, { timeoutMs = 50000, trace } = {}) 
         const invalid = e.status === 400 && !/model/i.test(`${e.message} ${e.details || ''}`) && !/api key/i.test(e.message);
         if (invalid && input.youtubeUrl && media && /media/i.test(`${e.message} ${e.details || ''}`)) { media = false; f--; continue; }
         if (invalid) continue; // try the next, simpler format
-        if (e.code === 'BAD_JSON' && f < FORMATS.length - 1) continue;
+        if (e.code === 'BAD_JSON' && f < order.length - 1) continue;
         break;
       }
     }
