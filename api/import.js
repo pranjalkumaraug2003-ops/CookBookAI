@@ -97,7 +97,8 @@ export async function importRecipe(input, { trace } = {}) {
   if (isUrl) {
     const page = await fetchPage(raw);
     const meta = pageMeta(page.html, page.url);
-    const card = extractRecipe(page.html);
+    const card = extractRecipe(page.html, trace);
+    if (trace) trace.push(`page: recipe card ${card ? `found (${card.ingredients.length} ingredients, ${card.steps.length} steps)` : 'not found'}`);
     const source = { kind: 'blog', url: page.url, site: meta.site, author: card && card.author ? card.author : '' };
     if (card) {
       const out = await fromText(recipeToText(card), source, warnings, { structured: true, trace });

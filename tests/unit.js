@@ -62,6 +62,8 @@ const html = fs.readFileSync(path.join(dir, 'blog.html'), 'utf8');
 const card = extractRecipe(html);
 check('page: finds a Recipe inside @graph', card && card.name === 'Jeera aloo' && card.ingredients.length === 5 && card.steps.length === 3, card);
 check('page: yield, time and author', card.servings === 3 && card.totalMinutes === 25 && card.author === 'Asha', card);
+const messy = '<script type="application/ld+json">{"@type":"Recipe","name":"Poha",\n"recipeIngredient":["1 cup poha"],"recipeInstructions":"Rinse the poha.\nTemper and mix.",}</script>';
+check('page: a card with raw line breaks and a trailing comma still parses', extractRecipe(messy) && extractRecipe(messy).name === 'Poha', extractRecipe(messy));
 check('page: ISO durations', isoMinutes('PT1H30M') === 90 && isoMinutes('PT45M') === 45 && isoMinutes('') === null);
 check('page: structured data reads back as a plain recipe', /Ingredients\n- 3 potatoes/.test(recipeToText(card)));
 check('page: text extraction skips scripts', !/schema\.org/.test(pageText(html)) && /Easy Jeera Aloo/.test(pageText(html)));

@@ -131,13 +131,24 @@ function instructionLines(ins, out = [], section = '') {
 
 const youtubeIdFrom = (u) => { const m = String(u || '').match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/); return m ? m[1] : null; };
 
-export function extractRecipe(html) {
-  const blocks = [...html.matchAll(/<script[^>]*type=["']?application\/ld\+json["']?[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
+// Real pages break JSON in small ways: raw line breaks inside strings, trailing commas, HTML comments.
+function parseLd(text) {
+  const t = text.trim().replace(/^<!--|-->$/g, '').trim();
+  const attempts = [
+    t,
+    t.replace(/[\u0000-\u001F]+/g, ' '),
+    t.replace(/[\u0000-\u001F]+/g, ' ').replace(/,\s*([}\]])/g, '$1'),
+  ];
+  for (const a of attempts) { try { return JSON.parse(a); } catch (_) { /* next */ } }
+  return null;
+}
+
+export function extractRecipe(html, diag) {
+  const blocks = [...html.matchAll(/<script[^>]*type\s*=\s*["']?application\/ld\+json["']?[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
+  if (diag) diag.push(`page: ${html.length} chars, ${blocks.length} JSON-LD blocks`);
   for (const b of blocks) {
-    let data;
-    try { data = JSON.parse(b.trim()); } catch (_) {
-      try { data = JSON.parse(b.trim().replace(/,\s*([}\]])/g, '$1')); } catch (__) { continue; }
-    }
+    const data = parseLd(b);
+    if (!data) { if (diag) diag.push('page: a JSON-LD block could not be parsed'); continue; }
     const r = findRecipe(data);
     if (!r) continue;
     const ingredients = (Array.isArray(r.recipeIngredient) ? r.recipeIngredient : r.ingredients || []).map(stripTags).filter(Boolean);
