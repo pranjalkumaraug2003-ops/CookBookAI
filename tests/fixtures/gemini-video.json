@@ -1,0 +1,21 @@
+{
+  "title": "Masala chai",
+  "servings": 2,
+  "totalMinutes": 10,
+  "pots": [ { "key": "chai", "name": "Chai", "vessel": "pot" } ],
+  "ingredients": [
+    { "key": "water", "name": "Water", "qty": 1, "unit": "cup", "kind": "volume", "group": "chai", "aliases": ["water", "paani"] },
+    { "key": "ginger", "name": "Ginger, crushed", "qty": 1, "unit": "inch", "kind": "count", "group": "chai", "aliases": ["ginger", "adrak"] },
+    { "key": "tea", "name": "Tea leaves", "qty": 2, "unit": "tsp", "kind": "volume", "group": "chai", "aliases": ["tea", "chai patti"] },
+    { "key": "milk", "name": "Milk", "qty": 1, "unit": "cup", "kind": "volume", "group": "chai", "aliases": ["milk", "doodh"] },
+    { "key": "sugar", "name": "Sugar", "qty": 2, "unit": "tsp", "kind": "volume", "group": "chai", "aliases": ["sugar", "cheeni"] }
+  ],
+  "steps": [
+    { "pot": "chai", "place": "Pot", "headline": "Boil water with ginger", "detail": "{water} water and {ginger} crushed ginger.", "timerKind": "countdown", "minutes": 2, "whistles": null, "whenDone": null, "cue": "Rolling boil", "checklist": null, "cannotPause": false, "waitsForPot": null, "videoStart": 4, "videoEnd": 20 },
+    { "pot": "chai", "place": "Pot", "headline": "Add {tea} tea leaves", "detail": "Let it brew till the water turns deep brown.", "timerKind": "checkin", "minutes": 1, "whistles": null, "whenDone": null, "cue": "Deep brown", "checklist": null, "cannotPause": false, "waitsForPot": null, "videoStart": 20, "videoEnd": 34 },
+    { "pot": "chai", "place": "Pot", "headline": "Add milk and sugar", "detail": "{milk} milk and {sugar} sugar. Bring it up twice.", "timerKind": "countdown", "minutes": 3, "whistles": null, "whenDone": "Turn the flame off", "cue": null, "checklist": null, "cannotPause": false, "waitsForPot": null, "videoStart": 34, "videoEnd": 52 },
+    { "pot": null, "place": "Counter", "headline": "Strain and serve", "detail": "Strain into cups.", "timerKind": "none", "minutes": null, "whistles": null, "whenDone": null, "cue": null, "checklist": null, "cannotPause": false, "waitsForPot": null, "videoStart": 52, "videoEnd": 60 }
+  ],
+  "servingLine": "Pour it hot.",
+  "problems": []
+}

@@ -1,0 +1,17 @@
+{
+  "name": "cook-along-mode",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Hands-free cooking mode for messy hands: voice, gestures, whistle counting, recipe import and YouTube mode.",
+  "type": "module",
+  "scripts": {
+    "dev": "node dev-server.js",
+    "test": "node tests/unit.js && node tests/run-e2e.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}

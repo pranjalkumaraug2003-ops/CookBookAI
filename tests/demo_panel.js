@@ -1,0 +1,21 @@
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
+  const page = await (await browser.newContext({ viewport: { width: 1366, height: 820 }, permissions: ['microphone', 'camera'] })).newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto(process.argv[2]);
+  await page.evaluate(() => document.fonts.ready);
+  await page.click('[data-tap="start"]');
+  await page.waitForTimeout(1500);
+  await page.keyboard.press('d');
+  await page.waitForTimeout(400);
+  await page.click('[data-speed="30"]');
+  await page.fill('[data-cfg="nearEnter"]', '0.2');
+  await page.click('[data-jump="4"]');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: process.argv[3] });
+  const st = await page.evaluate(() => ({ step: window.__cookAlong.S.step, speed: window.__cookAlong.S.speed, status: document.getElementById('dstatus').textContent, log: document.getElementById('dlog').textContent.split('\n').slice(0, 6) }));
+  console.log(JSON.stringify({ errors, st }, null, 1));
+  await browser.close();
+})();

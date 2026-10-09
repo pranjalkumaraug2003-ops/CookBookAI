@@ -1,0 +1,38 @@
+{
+  "title": "Rajma chawal",
+  "servings": 4,
+  "totalMinutes": 70,
+  "pots": [
+    { "key": "rajma", "name": "Rajma", "vessel": "cooker" },
+    { "key": "rice", "name": "Rice", "vessel": "pot" },
+    { "key": "masala", "name": "Masala", "vessel": "kadai" }
+  ],
+  "ingredients": [
+    { "key": "rajma", "name": "Rajma", "qty": 1, "unit": "cup", "kind": "volume", "group": "rajma", "aliases": ["rajma", "kidney beans"] },
+    { "key": "rajmaWater", "name": "Water", "qty": 3, "unit": "cup", "kind": "volume", "group": "rajma", "aliases": ["water", "paani"] },
+    { "key": "salt", "name": "Salt", "qty": null, "unit": "to taste", "kind": "fixed", "group": "rajma", "aliases": ["salt", "namak"] },
+    { "key": "rice", "name": "Basmati rice", "qty": 1.5, "unit": "cup", "kind": "volume", "group": "rice", "aliases": ["rice", "chawal"] },
+    { "key": "riceWater", "name": "Water", "qty": 3, "unit": "cup", "kind": "volume", "group": "rice", "aliases": ["water", "paani"] },
+    { "key": "oil", "name": "Oil", "qty": 2, "unit": "tbsp", "kind": "volume", "group": "masala", "aliases": ["oil", "tel"] },
+    { "key": "jeera", "name": "Cumin seeds", "qty": 1, "unit": "tsp", "kind": "volume", "group": "masala", "aliases": ["jeera", "cumin"] },
+    { "key": "onions", "name": "Onions", "qty": 2, "unit": "", "kind": "count", "group": "masala", "aliases": ["onion", "pyaaz"] },
+    { "key": "gingerGarlic", "name": "Ginger garlic paste", "qty": 1, "unit": "tbsp", "kind": "volume", "group": "masala", "aliases": ["ginger garlic", "adrak lehsun"] },
+    { "key": "tomatoes", "name": "Tomatoes, pureed", "qty": 3, "unit": "", "kind": "count", "group": "masala", "aliases": ["tomato", "tamatar"] },
+    { "key": "chilli", "name": "Red chilli powder", "qty": 1, "unit": "tsp", "kind": "volume", "group": "masala", "aliases": ["chilli powder", "lal mirch"] },
+    { "key": "haldi", "name": "Turmeric", "qty": 0.5, "unit": "tsp", "kind": "volume", "group": "masala", "aliases": ["turmeric", "haldi"] },
+    { "key": "garamMasala", "name": "Garam masala", "qty": 1, "unit": "tsp", "kind": "volume", "group": "finish", "aliases": ["garam masala"] }
+  ],
+  "steps": [
+    { "pot": "rajma", "place": "Cooker", "headline": "Pressure cook the rajma", "detail": "Drained rajma, {rajmaWater} water and salt. Medium flame.", "timerKind": "whistles", "minutes": null, "whistles": 6, "whenDone": null, "cue": null, "checklist": null, "cannotPause": false, "waitsForPot": null, "videoStart": null, "videoEnd": null },
+    { "pot": "rice", "place": "Sink", "headline": "Rinse and soak {rice} rice", "detail": "Rinse until the water runs clear, then cover with water.", "timerKind": "countdown", "minutes": 20, "whistles": null, "whenDone": null, "cue": null, "checklist": null, "cannotPause": false, "waitsForPot": null, "videoStart": null, "videoEnd": null },
+    { "pot": null, "place": "Counter", "headline": "Chop the onions", "detail": "Finely chop {onions} onions and puree the tomatoes.", "timerKind": "none", "minutes": null, "whistles": null, "whenDone": null, "cue": null, "checklist": ["Chop {onions} onions", "Puree {tomatoes} tomatoes"], "cannotPause": false, "waitsForPot": null, "videoStart": null, "videoEnd": null },
+    { "pot": "masala", "place": "Kadai", "headline": "Crackle {jeera} jeera in hot oil", "detail": "{oil} oil on a medium flame, then the jeera.", "timerKind": "none", "minutes": null, "whistles": null, "whenDone": null, "cue": "Jeera crackles", "checklist": null, "cannotPause": true, "waitsForPot": null, "videoStart": null, "videoEnd": null },
+    { "pot": "masala", "place": "Kadai", "headline": "Sauté onions till golden", "detail": "Stir often on a medium flame, then add {gingerGarlic} ginger garlic paste.", "timerKind": "checkin", "minutes": 8, "whistles": null, "whenDone": null, "cue": "Golden brown", "checklist": null, "cannotPause": false, "waitsForPot": null, "videoStart": null, "videoEnd": null },
+    { "pot": "masala", "place": "Kadai", "headline": "Add tomatoes and spices", "detail": "Tomato puree, {chilli} chilli powder and {haldi} haldi. Cook till oil separates.", "timerKind": "checkin", "minutes": 6, "whistles": null, "whenDone": null, "cue": "Oil separates", "checklist": null, "cannotPause": false, "waitsForPot": null, "videoStart": null, "videoEnd": null },
+    { "pot": "rice", "place": "Rice pot", "headline": "Cook the rice", "detail": "Drained rice and {riceWater} water. Boil, then lowest flame, lid on.", "timerKind": "countdown", "minutes": 12, "whistles": null, "whenDone": "Turn the flame off", "cue": null, "checklist": null, "cannotPause": false, "waitsForPot": null, "videoStart": null, "videoEnd": null },
+    { "pot": "rajma", "place": "Cooker", "headline": "Open the cooker, add the masala", "detail": "Stir the masala into the rajma, mash a few beans. Simmer.", "timerKind": "countdown", "minutes": 15, "whistles": null, "whenDone": null, "cue": "Thick and creamy", "checklist": null, "cannotPause": false, "waitsForPot": "rajma", "videoStart": null, "videoEnd": null },
+    { "pot": null, "place": "Plate", "headline": "Finish with {garamMasala} garam masala", "detail": "Stir it in, then serve the rajma over the rice. {unknownThing} on top.", "timerKind": "none", "minutes": null, "whistles": null, "whenDone": null, "cue": null, "checklist": null, "cannotPause": false, "waitsForPot": null, "videoStart": null, "videoEnd": null }
+  ],
+  "servingLine": "Rajma over hot rice, with onion rings on the side.",
+  "problems": ["The source does not say how much salt to use."]
+}

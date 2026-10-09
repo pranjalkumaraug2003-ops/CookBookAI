@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FAF9F6">
+<meta name="description" content="Cook hands-free with messy hands: big type for 3 to 5 ft, Hinglish voice commands, palm gestures, elbow holds, cooker whistle counting, and any recipe from YouTube, a blog or a chatbot.">
+<title>Cook-Along Mode</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preload" href="fonts/atkinson-hyperlegible-next-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="viewport"><div id="stage" role="application" aria-label="Cook-Along Mode"><div id="stageRoot"></div><div id="videoHost"></div></div></div>
+<video id="cam" playsinline muted></video>
+<button class="demo-fab" id="demoFab" type="button" aria-label="Open demo controls">Demo · D</button>
+<aside id="demo" aria-label="Demo controls"></aside>
+<script type="module" src="app.js"></script>
+</body>
+</html>

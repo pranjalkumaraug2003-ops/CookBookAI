@@ -1,0 +1,19 @@
+{
+  "name": "Cook-Along Mode",
+  "short_name": "Cook-Along",
+  "description": "Hands-free cooking for messy hands: voice, gestures, whistle counting and any recipe.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#FAF9F6",
+  "theme_color": "#FAF9F6",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Dal tadka + jeera rice", "url": "./#recipe=dal-tadka", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
