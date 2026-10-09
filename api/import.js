@@ -57,9 +57,9 @@ async function youtubeMeta(url) {
 }
 
 // Text through the model if there is one, through the rules if not (or if the model fails).
-async function fromText(text, source, warnings, { structured = false } = {}) {
+async function fromText(text, source, warnings, { structured = false, trace } = {}) {
   try {
-    const { draft, model, format } = await draftWithGemini({ text });
+    const { draft, model, format } = await draftWithGemini({ text }, { trace });
     return { recipe: draftToRecipe(draft, { source, warnings }), method: `${structured ? 'recipe card + ' : ''}${model}${format !== 'schema' ? ` (${format})` : ''}` };
   } catch (e) {
     if (e.code !== 'NO_KEY') warnings.push(`The AI step failed (${e.message}${e.details ? `: ${String(e.details).slice(0, 160)}` : ''}), so simple rules made this draft. Check pots and timers carefully.`);
@@ -69,7 +69,7 @@ async function fromText(text, source, warnings, { structured = false } = {}) {
   }
 }
 
-export async function importRecipe(input) {
+export async function importRecipe(input, { trace } = {}) {
   const raw = String(input || '').trim();
   if (!raw) throw new UserError('Paste a link or a recipe first.', 'empty');
   if (raw.length > 40000) throw new UserError('That is too much text. Paste just the recipe.', 'too_big', 413);
@@ -82,7 +82,7 @@ export async function importRecipe(input) {
     const meta = await youtubeMeta(url);
     const source = { kind: 'youtube', url, videoId, author: meta.author || '' };
     try {
-      const { draft, model, format } = await draftWithGemini({ youtubeUrl: url, title: meta.title });
+      const { draft, model, format } = await draftWithGemini({ youtubeUrl: url, title: meta.title }, { trace });
       const recipe = draftToRecipe(draft, { source, warnings });
       if (!recipe.steps.some((s) => s.video)) warnings.push('The steps have no video times, so the video will play straight through. You can add times on each step.');
       return { recipe, warnings, method: `video + ${model}${format !== 'schema' ? ` (${format})` : ''}` };
@@ -100,18 +100,18 @@ export async function importRecipe(input) {
     const card = extractRecipe(page.html);
     const source = { kind: 'blog', url: page.url, site: meta.site, author: card && card.author ? card.author : '' };
     if (card) {
-      const out = await fromText(recipeToText(card), source, warnings, { structured: true });
+      const out = await fromText(recipeToText(card), source, warnings, { structured: true, trace });
       if (card.name) out.recipe.title = card.name.slice(0, 80);
       return { ...out, warnings };
     }
     const text = pageText(page.html);
     if (text.length < 200) throw new UserError('No recipe was found on that page. Paste the recipe text instead.', 'no_recipe', 422);
     warnings.push('This page has no recipe card, so the steps were read from its text.');
-    const out = await fromText(`${meta.title}\n\n${text}`, source, warnings);
+    const out = await fromText(`${meta.title}\n\n${text}`, source, warnings, { trace });
     return { ...out, warnings };
   }
 
-  const out = await fromText(raw, { kind: 'text' }, warnings);
+  const out = await fromText(raw, { kind: 'text' }, warnings, { trace });
   return { ...out, warnings };
 }
 
@@ -123,8 +123,10 @@ export default async function handler(req, res) {
   if (process.env.IMPORT_CODE && req.headers['x-import-code'] !== process.env.IMPORT_CODE) return send(res, 401, { error: 'This server needs an access code for imports.', code: 'needs_code' });
   try {
     const body = await readJson(req);
-    const out = await importRecipe(body.input);
-    return send(res, 200, out);
+    // ?debug=1 returns the model attempts (model, format, Google's error message), never the key.
+    const trace = /[?&]debug=1\b/.test(req.url || '') ? [] : undefined;
+    const out = await importRecipe(body.input, { trace });
+    return send(res, 200, trace ? { ...out, trace } : out);
   } catch (e) {
     if (e instanceof UserError) return send(res, e.status || 400, { error: e.message, code: e.code });
     if (e instanceof SyntaxError) return send(res, 400, { error: 'The request was not valid JSON.', code: 'bad_json' });

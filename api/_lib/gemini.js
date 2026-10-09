@@ -155,7 +155,7 @@ async function callModel(model, body, key, timeoutMs) {
 }
 
 // input: { text } or { youtubeUrl, title }
-export async function draftWithGemini(input, { timeoutMs = 50000 } = {}) {
+export async function draftWithGemini(input, { timeoutMs = 50000, trace } = {}) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new ModelError('No model key on the server.', { status: 501, code: 'NO_KEY' });
   const parts = [];
@@ -188,12 +188,15 @@ export async function draftWithGemini(input, { timeoutMs = 50000 } = {}) {
     for (let f = 0; f < FORMATS.length; f++) {
       const fmt = FORMATS[f];
       try {
+        const t0 = Date.now();
         const draft = await callModel(model, bodyFor(fmt, { media }), key, timeoutMs);
+        if (trace) trace.push(`${model}/${fmt.name}: ok in ${Date.now() - t0} ms`);
         return { draft, model, format: fmt.name };
       } catch (e) {
         lastErr = e;
         tried.push(`${model}/${fmt.name}${media ? '' : '/no-media'}: ${e.status || ''} ${e.message}${e.details ? ` (${e.details})` : ''}`);
         console.error('gemini', tried[tried.length - 1]);
+        if (trace) trace.push(tried[tried.length - 1]);
         const invalid = e.status === 400 && !/model/i.test(`${e.message} ${e.details || ''}`) && !/api key/i.test(e.message);
         if (invalid && input.youtubeUrl && media && /media/i.test(`${e.message} ${e.details || ''}`)) { media = false; f--; continue; }
         if (invalid) continue; // try the next, simpler format
