@@ -72,6 +72,8 @@ mark.qty { background: var(--masala-tint); color: inherit; border-radius: 12px; 
 .start-cta .s { font-size: 18px; color: #C9CCD1; }
 .privacy { display: flex; gap: 12px; font-size: 17px; line-height: 1.35; color: #2B3036; }
 .privacy svg { flex-shrink: 0; }
+.plink { color: var(--rice); font-weight: 700; text-underline-offset: 3px; }
+.how .plink { display: inline-block; margin-top: 8px; }
 .toggles { display: flex; flex-wrap: wrap; gap: 8px; }
 .toggle { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); font-size: 16px; cursor: pointer; }
 .toggle input { width: 18px; height: 18px; }

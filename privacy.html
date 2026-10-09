@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cook-Along privacy</title>
+<meta name="description" content="What Cook-Along uses, where it goes, and how to clear it.">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  @font-face { font-family: 'Atkinson Hyperlegible Next'; font-weight: 400; font-display: swap; src: url(fonts/atkinson-hyperlegible-next-latin-400-normal.woff2) format('woff2'); }
+  @font-face { font-family: 'Atkinson Hyperlegible Next'; font-weight: 700; font-display: swap; src: url(fonts/atkinson-hyperlegible-next-latin-700-normal.woff2) format('woff2'); }
+  @font-face { font-family: 'Atkinson Hyperlegible Next'; font-weight: 800; font-display: swap; src: url(fonts/atkinson-hyperlegible-next-latin-800-normal.woff2) format('woff2'); }
+  :root { --ground: #FAF9F6; --surface: #FFFFFF; --ink: #171B20; --ink2: #4B5056; --line: #DDE0E4; --masala: #F26829; --masala-deep: #AA3606; --rice: #2553B6; --ok: #1F7A4D; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 18px/1.55 'Atkinson Hyperlegible Next', system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  a { color: var(--rice); }
+  .back { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; text-decoration: none; color: var(--ink); padding: 10px 0; }
+  h1 { font-size: clamp(32px, 6vw, 44px); line-height: 1.1; margin: 12px 0 8px; letter-spacing: -0.01em; }
+  .lede { font-size: 20px; color: var(--ink2); margin: 0 0 28px; }
+  h2 { font-size: 22px; margin: 32px 0 10px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px; margin: 12px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 16px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 8px; border-top: 1px solid var(--line); }
+  th { font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink2); border-top: 0; }
+  td:first-child { font-weight: 700; width: 30%; }
+  .scroll { overflow-x: auto; }
+  ul { padding-left: 22px; margin: 8px 0; }
+  li { margin: 6px 0; }
+  button { font: inherit; font-weight: 700; border: 0; border-radius: 14px; padding: 14px 20px; background: var(--masala-deep); color: #fff; cursor: pointer; min-height: 52px; }
+  button:disabled { opacity: 0.6; cursor: default; }
+  .done { color: var(--ok); font-weight: 700; margin-top: 10px; min-height: 1.5em; }
+  .small { font-size: 15px; color: var(--ink2); }
+  @media (max-width: 560px) { td:first-child { width: auto; } th, td { padding: 8px 6px; } }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="./">&larr; Back to Cook-Along</a>
+  <h1>Privacy</h1>
+  <p class="lede">Cook-Along is used in your kitchen, with a microphone and a camera pointed at you. Here is exactly what it does with them, and with everything else.</p>
+
+  <div class="card">
+    <b>The short version.</b> Nothing is recorded. The camera never leaves your device. Whistle counting never leaves your device. Spoken commands are recognised by your browser's speech service. A recipe you import is sent to this app's server and, when AI is switched on, to Google Gemini. Your recipes, notes and settings are kept only in this browser.
+  </div>
+
+  <h2>Your microphone</h2>
+  <ul>
+    <li><b>Whistle and noise sensing</b> measures loudness and pitch on this device, many times a second, and throws each measurement away. No audio is stored or sent.</li>
+    <li><b>Voice commands</b> (“aage”, “ho gaya”) use the browser's built-in speech recognition. In Chrome, that means the audio of what you say is sent to Google to be turned into text, under Google's own privacy terms. Cook-Along only receives the text and keeps the last few commands on screen so you can undo them.</li>
+    <li>Switch it off at any time: hold the status pills at the top of the cooking screen for a second, or untick Voice and Whistle listening before you start.</li>
+  </ul>
+
+  <h2>Your camera</h2>
+  <ul>
+    <li>Hand and distance detection runs entirely on this device, using Google's MediaPipe models downloaded once into your browser. No picture or video leaves your device, and nothing is recorded.</li>
+    <li>Switch it off the same way: hold the status pills, or untick Gestures.</li>
+  </ul>
+
+  <h2>Recipes you import</h2>
+  <ul>
+    <li>The link or text you paste is sent to this app's server, which reads the page (or the video) and drafts the recipe.</li>
+    <li>When AI is switched on, the recipe text, or the YouTube link, is sent to Google Gemini through Google's API. Nothing from your kitchen (camera, microphone, voice) is ever sent with it.</li>
+    <li>The server keeps a short log of each import so faults can be fixed: the kind of input (text, a link or a video), a link's website name, how long it took, and whether it worked. It does <b>not</b> log the text you pasted, the full link, or your address. The hosting provider (Vercel) keeps its own standard request logs.</li>
+    <li>YouTube videos play in YouTube's own embedded player, which follows YouTube's privacy terms.</li>
+  </ul>
+
+  <h2>What is kept on this device</h2>
+  <div class="card scroll">
+    <table>
+      <thead><tr><th>What</th><th>Why</th><th>How long</th></tr></thead>
+      <tbody>
+        <tr><td>Your recipe library</td><td>So imported recipes are there next time</td><td>Until you delete them</td></tr>
+        <tr><td>The cook in progress</td><td>So a refresh or a closed tab never loses your place or your timers</td><td>6 hours</td></tr>
+        <tr><td>Notes for next time</td><td>Shown before you cook that recipe again</td><td>Until you clear them</td></tr>
+        <tr><td>Settings</td><td>Language, whistle sensitivity, which sensors you allowed</td><td>Until you clear them</td></tr>
+        <tr><td>App files</td><td>So the app opens without a network</td><td>Replaced on each update</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>None of this is sent anywhere. Cook-Along has no accounts, sets no cookies, and runs no analytics or ads. (YouTube's player, when you use a video, may set its own.)</p>
+
+  <h2>Clear everything</h2>
+  <p>This removes your recipes, notes, settings, any cook in progress and the offline files from this browser. Camera and microphone permissions are managed by your browser's site settings.</p>
+  <button type="button" id="wipe">Clear Cook-Along from this browser</button>
+  <div class="done" id="wipeMsg" role="status" aria-live="polite"></div>
+
+  <h2>About this app</h2>
+  <p class="small">Cook-Along is a working prototype built as a product design assignment. The source code is public at <a href="https://github.com/pranjalkumaraug2003-ops/CookBookAI">github.com/pranjalkumaraug2003-ops/CookBookAI</a>; questions and problems can be raised there as an issue. Last updated 9 October 2026.</p>
+</main>
+<script>
+  document.getElementById('wipe').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const msg = document.getElementById('wipeMsg');
+    btn.disabled = true;
+    try {
+      try { Object.keys(localStorage).filter((k) => k.startsWith('cookalong.')).forEach((k) => localStorage.removeItem(k)); } catch (_) { /* storage blocked */ }
+      try { sessionStorage.clear(); } catch (_) { /* storage blocked */ }
+      if (window.caches) { const keys = await caches.keys(); await Promise.all(keys.filter((k) => k.startsWith('cookalong')).map((k) => caches.delete(k))); }
+      if (navigator.serviceWorker) { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map((r) => r.unregister())); }
+      msg.textContent = 'Done. Cook-Along has been cleared from this browser.';
+    } catch (err) {
+      msg.textContent = 'Some of it could not be cleared. Your browser’s site settings can remove the rest.';
+    }
+    btn.disabled = false;
+  });
+</script>
+</body>
+</html>

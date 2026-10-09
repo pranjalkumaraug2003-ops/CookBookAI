@@ -1444,7 +1444,7 @@ function startView() {
           ${videoToggle}
         </div>
         <button type="button" class="start-cta" data-tap="start"><div><div class="t">Start Cook-Along</div><div class="s">Hands-free from here</div></div>${I.right(40, '#fff')}</button>
-        <div class="privacy">${I.lock(22, '#2B3036')}<div>Prop the tablet 3 to 5 ft away, facing you. Nothing is recorded. Camera and whistle sensing stay on this device; voice uses the browser's speech service.</div></div>
+        <div class="privacy">${I.lock(22, '#2B3036')}<div>Prop the tablet 3 to 5 ft away, facing you. Nothing is recorded. Camera and whistle sensing stay on this device; voice uses the browser's speech service. <a class="plink" href="privacy.html">Privacy</a></div></div>
       </div>
     </div>
     <div class="ingredients">
@@ -1473,7 +1473,7 @@ function setupView() {
         <div class="sp">Runs entirely on this device. No picture leaves it and nothing is recorded.</div></div>
       <div class="card scard"><div class="sh">${I.lock(26)}<div class="st">Your control</div></div>
         <div class="sb2">Hold the status pills at the top of the cooking screen for a second to switch the microphone and camera fully off, and again to switch them back on.</div>
-        <div class="sp">The screen stays awake while you cook, so a recipe never locks mid-step.</div></div>
+        <div class="sp">The screen stays awake while you cook, so a recipe never locks mid-step. <a class="plink" href="privacy.html">Full privacy details</a></div></div>
     </div>
     <div class="card tune">
       <div class="lbl">Kitchen tuning, saved on this device</div>

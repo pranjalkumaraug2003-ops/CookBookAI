@@ -263,6 +263,24 @@ const FAKE_YT = () => {
   const nearLayout = await C(() => document.getElementById('stage').dataset.layout);
   check('youtube: near mode keeps the video between the hold targets', nearLayout === 'vnear', nearLayout);
 
+  // ---- privacy page: linked from the add screen, readable, and its button clears everything Cook-Along kept
+  page = await newPage(ctx);
+  await page.goto(base + '/index.html');
+  await page.waitForTimeout(500);
+  await C(() => { const c = window.__cookAlong; c.S.screen = 'add'; c.render(); });
+  const plink = await C(() => { const a = document.querySelector('#stage a.plink[href="privacy.html"]'); return !!a && a.getBoundingClientRect().height > 0; });
+  check('privacy: linked from the add screen', plink);
+  await C(() => { const c = window.__cookAlong; c.S.screen = 'setup'; c.S.setupMode = 'settings'; c.render(); });
+  check('privacy: linked from settings', await C(() => !!document.querySelector('#stage .setup a.plink')));
+  await C(() => { localStorage.setItem('cookalong.notes.v2', '["x"]'); localStorage.setItem('other.app', 'keep'); });
+  await page.goto(base + '/privacy.html');
+  check('privacy: page loads with its heading', (await page.textContent('h1')) === 'Privacy');
+  await page.click('#wipe');
+  await page.waitForFunction(() => document.getElementById('wipeMsg').textContent.length > 0);
+  const left = await C(() => ({ ours: Object.keys(localStorage).filter((k) => k.startsWith('cookalong.')), other: localStorage.getItem('other.app'), msg: document.getElementById('wipeMsg').textContent }));
+  check('privacy: clearing removes only Cook-Along\'s data', left.ours.length === 0 && left.other === 'keep' && /cleared/.test(left.msg), left);
+  await shot('p16-privacy');
+
   check('no page errors', errors.length === 0, errors.join(' | '));
   const failed = results.filter((r) => !r.ok);
   console.log(results.map((r) => `${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.ok ? '' : `  [${r.detail}]`}`).join('\n'));

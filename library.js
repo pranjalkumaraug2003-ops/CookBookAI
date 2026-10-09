@@ -131,7 +131,7 @@ export function libraryScreens({ S, render, openRecipe, store, log }) {
               <li>You review it: fix a pot, a timer or a step, then save.</li>
             </ol>
           </div>
-          <div class="how"><div class="k">Privacy</div><div id="privAi">${esc(privText())}</div></div>
+          <div class="how"><div class="k">Privacy</div><div id="privAi">${esc(privText())}</div><a class="plink" href="privacy.html">Full privacy details</a></div>
           ${S.online ? '' : `<div class="err">${I.wifiOff(20, '#AA3606')}<div>You're offline. Pasted text can still be read with simple rules; links need a connection.</div></div>`}
         </div>
       </div>

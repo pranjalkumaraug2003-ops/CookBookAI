@@ -2,6 +2,7 @@
 // The answer is held to a JSON schema, then checked again by convert.js, then checked by the cook on the
 // review screen. Nothing the model writes is trusted on its own.
 // API: https://ai.google.dev/api/generate-content
+import { log } from './log.js';
 
 const BASE = () => process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta';
 // Tried in order; the first that exists for the key is used. Override with GEMINI_MODEL.
@@ -218,7 +219,7 @@ export async function draftWithGemini(input, { timeoutMs = 50000, trace } = {}) 
       } catch (e) {
         lastErr = e;
         tried.push(`${model}/${fmt.name}${media ? '' : '/no-media'}: ${e.status || ''} ${e.message}${e.details ? ` (${e.details})` : ''}`);
-        console.error('gemini', tried[tried.length - 1]);
+        log('model_attempt', { model, format: fmt.name, media, status: e.status || null, code: e.code || null, error: `${e.message}${e.details ? ` (${String(e.details).slice(0, 200)})` : ''}` }, 'warn');
         if (trace) trace.push(tried[tried.length - 1]);
         const invalid = e.status === 400 && !/model/i.test(`${e.message} ${e.details || ''}`) && !/api key/i.test(e.message);
         if (invalid && input.youtubeUrl && media && /media/i.test(`${e.message} ${e.details || ''}`)) { media = false; f--; continue; }

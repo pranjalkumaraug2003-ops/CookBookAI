@@ -10,6 +10,7 @@ import { extractRecipe, pageText, isoMinutes, assertPublicUrl, recipeToText } fr
 import { draftToRecipe } from '../api/_lib/convert.js';
 import { toOpenApi, DRAFT_SCHEMA } from '../api/_lib/gemini.js';
 import { parseCommand } from '../voice.js';
+import { describeInput } from '../api/_lib/log.js';
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const results = [];
@@ -102,6 +103,13 @@ check('draft: out-of-order video times are dropped, not trusted', rec4.steps.eve
 // ---- schema conversion for the API
 const api = toOpenApi(DRAFT_SCHEMA);
 check('schema: types upper-cased, nullables marked', api.type === 'OBJECT' && api.properties.totalMinutes.type === 'INTEGER' && api.properties.totalMinutes.nullable === true && api.properties.steps.items.properties.checklist.type === 'ARRAY');
+
+// ---- server logs describe the input without keeping it
+const dText = describeInput('My secret family recipe: 2 cups dal');
+check('log: pasted text is logged as a length, never the text', dText.kind === 'text' && dText.chars === 35 && !JSON.stringify(dText).includes('secret'), dText);
+const dLink = describeInput('https://www.example.com/recipes/aunty-meena-dal?token=abc');
+check('log: a link is logged as its site only', dLink.kind === 'link' && dLink.host === 'example.com' && !JSON.stringify(dLink).includes('meena') && !JSON.stringify(dLink).includes('token'), dLink);
+check('log: a YouTube link is logged as a video', describeInput('https://youtu.be/bQ6Ap-EzXSc').kind === 'youtube' && describeInput('https://m.youtube.com/watch?v=bQ6Ap-EzXSc').kind === 'youtube');
 
 // ---- the app never speaks a command: built-in recipe lines
 const lines = DAL_TADKA.steps.flatMap((s) => [s.say || `${s.headline}. ${s.detail || ''}`, ...(s.beats || []).flatMap((b) => [b.say, b.sayHi])]);

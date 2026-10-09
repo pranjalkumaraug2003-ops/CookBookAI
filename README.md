@@ -1,11 +1,18 @@
 # Cook-Along Mode
 
+[![Tests](https://github.com/pranjalkumaraug2003-ops/CookBookAI/actions/workflows/test.yml/badge.svg)](https://github.com/pranjalkumaraug2003-ops/CookBookAI/actions/workflows/test.yml)
+
+**Live:** https://cookbookai-eight.vercel.app/ · **Two-minute tour, no microphone or camera needed:** https://cookbookai-eight.vercel.app/?tour=1
+
 A hands-free cooking mode for a tablet propped 3 to 5 ft from the stove, built for cooks whose hands are covered in flour, oil or water. It started as the prototype for the Nielsen Product Design Intern assignment (Brief 2, "Messy Hands") and is now a working web app:
 
 * **Any recipe.** Paste a YouTube link, a recipe website or a chatbot answer. The app drafts the pots, timers and doneness cues, and you check them on a review screen before cooking. The dal tadka + jeera rice recipe is built in.
 * **YouTube mode.** The recipe video plays inside Cook-Along one step at a time and pauses itself at the end of each step until you say "aage".
 * **Never lose your place.** A reload, a crash or a dead battery comes back on the same step with the timers still right.
 * **Works offline** after the first visit, and installs as an app.
+* **A two-minute reviewer tour** that walks through a whole cook with simulated voice, whistles and gestures, each labelled as simulated.
+* **First-run setup** that explains the microphone and camera before the browser asks, kitchen tuning saved on the device, and a hard mute (hold the status pills for a second).
+* **Phone and laptop layouts** as well as the tablet one.
 * Everything from the prototype: Hinglish voice commands, palm-and-swipe gestures, elbow holds, cooker whistle counting, timers in fixed colour lanes, rescaling, the tadka called out beat by beat.
 
 No build step. Plain HTML, CSS and JavaScript modules in the browser; two small Node functions on the server.
@@ -45,7 +52,7 @@ The static part also runs on GitHub Pages, but GitHub Pages can't run the import
 ## How to use it
 
 1. **Pick a recipe** from the library, or **Add a recipe**: paste a link or the recipe text, check the draft on the review screen, save.
-2. On the recipe page, set **Cooking for** (taps are fine here; your hands are still clean) and press **Start Cook-Along**.
+2. On the recipe page, set **Cooking for** (taps are fine here; your hands are still clean) and press **Start Cook-Along**. The first time, a setup screen explains what the microphone and camera are used for before the browser asks.
 3. From then on nothing needs a clean finger:
 
 | You want to | Voice | Gesture | Touch (elbow or knuckle) |
@@ -110,10 +117,20 @@ Safety on the server: links are checked so the server never fetches its own netw
 * The cooker cooling time is a fixed estimate (10 min), not measured.
 * Imported recipes don't get the beat-by-beat tadka; a step that can't be paused is announced one step early instead.
 * Recipes and notes are kept in this browser only. There are no accounts and no sync between devices.
-* The layout is designed for a tablet in landscape (1180 × 820). On a phone it works but the text is smaller than the distance rules allow.
+* The layout is designed for a tablet in landscape (1180 × 820). Phones held upright get their own layout, but a phone's text is still smaller than the 5 ft distance rules ask for; it is meant for the counter, not across the kitchen.
 * A model can misread a recipe. That is why nothing starts without the review screen.
 
-**Privacy.** Nothing from the kitchen is recorded or saved. The camera, whistle and noise sensing run entirely on the device. Voice recognition uses the browser's speech service, which in Chrome means the audio of your commands is sent to Google for recognition. Recipe links and text you import are sent to this app's server and to Google Gemini to draft the recipe.
+**Privacy.** Nothing from the kitchen is recorded or saved. The camera, whistle and noise sensing run entirely on the device. Voice recognition uses the browser's speech service, which in Chrome means the audio of your commands is sent to Google for recognition. Recipe links and text you import are sent to this app's server and to Google Gemini to draft the recipe. The server logs only the kind of input, a link's site name, timing and the result, never the text or the full link. The full page is [`privacy.html`](privacy.html), linked from the add, setup and recipe screens; it also has a button that clears everything Cook-Along kept in the browser.
+
+---
+
+## Running it in production
+
+* **Tests on every push.** `.github/workflows/test.yml` runs the unit checks and all four browser suites in headless Chromium on each push and pull request, with a stand-in for Gemini, so no key is needed. Screenshots are kept as a build artifact when something fails.
+* **Structured logs.** Each import writes one JSON line (`event: "import"`, `status`, `code`, `kind`, `host`, `method`, `steps`, `ms`), and each failed model attempt writes `event: "model_attempt"` with the model, request format and Google's error. Filter them in Vercel → Logs. Nothing a cook pasted is logged.
+* **Debugging an import.** `POST /api/import?debug=1` returns the list of model attempts with the response (never the key).
+* **Settings** (Vercel environment variables, see `.env.example`): `GEMINI_API_KEY`; `GEMINI_MODEL` to choose which models are tried; `IMPORT_LIMIT` (imports per address per 10 minutes, default 12); `IMPORT_CODE` to require an access code for imports.
+* **Limits.** Imports may run for up to 180 s (`vercel.json`), because a model watching a whole video takes one to two minutes. The free Gemini tier is rate-limited per minute and per day; when the first model is busy the next one is tried, and when all are, the cook is told to try again or paste the text.
 
 ---
 
@@ -167,7 +184,11 @@ api/import.js       POST /api/import
 api/health.js       GET /api/health (is the AI model configured?)
 api/_lib/           page reading and SSRF guard, Gemini client, draft repairs
 dev-server.js       local server that also runs the /api functions
-tests/              unit checks and two browser suites
+tour.js             the two-minute reviewer tour (?tour=1)
+privacy.html        what is used, where it goes, and a button to clear it all
+api/_lib/log.js     one JSON log line per event, without the cook's input
+.github/workflows/  tests on every push
+tests/              unit checks and four browser suites
 fonts/              Atkinson Hyperlegible Next and Mono (SIL Open Font License)
 ```
 
@@ -187,7 +208,7 @@ npx playwright install chromium
 npm test
 ```
 
-`tests/unit.js` (39 checks: the rule-based reader, validation, page reading, the SSRF guard, draft repairs) and two browser suites run against the local server with a stand-in for Gemini: `tests/flow.cjs` (61 checks on the cooking engine with the dal tadka) and `tests/product.cjs` (40 checks: import and review, cooking an imported recipe, resume after reload, offline, the on-device fallback, YouTube mode). Screenshots of every state land in `tests/shots/`.
+183 checks in all. `tests/unit.js` (45 checks: the rule-based reader, validation, page reading, the SSRF guard, draft repairs, logs that never hold the input) runs in Node. Four browser suites run against the local server with a stand-in for Gemini: `tests/flow.cjs` (61 checks on the cooking engine with the dal tadka), `tests/product.cjs` (49: import and review, cooking an imported recipe, resume after reload, offline, the on-device fallback, YouTube mode, first-run setup, the hard mute, the privacy page), `tests/tour.cjs` (7: every tour stop) and `tests/phone.cjs` (21: every screen at 390 × 844). Screenshots of every state land in `tests/shots/`.
 
 ---
 

@@ -8,6 +8,7 @@ import { draftWithGemini } from './_lib/gemini.js';
 import { draftToRecipe } from './_lib/convert.js';
 import { parseRecipeText } from '../parse-text.js';
 import { normalizeRecipe } from '../recipe.js';
+import { log, describeInput, errorFields } from './_lib/log.js';
 
 export const config = { maxDuration: 180 };
 
@@ -120,19 +121,26 @@ export async function importRecipe(input, { trace } = {}) {
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') { res.setHeader('allow', 'POST'); return send(res, 204, {}); }
   if (req.method !== 'POST') return send(res, 405, { error: 'Use POST.', code: 'method' });
+  const t0 = Date.now();
   const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
-  if (limited(ip)) return send(res, 429, { error: 'Too many imports in a few minutes. Try again shortly.', code: 'rate_limited' });
-  if (process.env.IMPORT_CODE && req.headers['x-import-code'] !== process.env.IMPORT_CODE) return send(res, 401, { error: 'This server needs an access code for imports.', code: 'needs_code' });
+  if (limited(ip)) { log('import', { status: 429, code: 'rate_limited' }, 'warn'); return send(res, 429, { error: 'Too many imports in a few minutes. Try again shortly.', code: 'rate_limited' }); }
+  if (process.env.IMPORT_CODE && req.headers['x-import-code'] !== process.env.IMPORT_CODE) { log('import', { status: 401, code: 'needs_code' }, 'warn'); return send(res, 401, { error: 'This server needs an access code for imports.', code: 'needs_code' }); }
+  let input = {};
   try {
     const body = await readJson(req);
+    input = describeInput(body.input);
     // ?debug=1 returns the model attempts (model, format, Google's error message), never the key.
     const trace = /[?&]debug=1\b/.test(req.url || '') ? [] : undefined;
     const out = await importRecipe(body.input, { trace });
+    log('import', { status: 200, ...input, method: out.method, steps: out.recipe.steps.length, pots: out.recipe.pots.length, warnings: out.warnings.length, ms: Date.now() - t0 });
     return send(res, 200, trace ? { ...out, trace } : out);
   } catch (e) {
-    if (e instanceof UserError) return send(res, e.status || 400, { error: e.message, code: e.code });
-    if (e instanceof SyntaxError) return send(res, 400, { error: 'The request was not valid JSON.', code: 'bad_json' });
-    console.error('import failed', e);
+    if (e instanceof UserError) {
+      log('import', { status: e.status || 400, code: e.code, ...input, ms: Date.now() - t0 }, (e.status || 400) >= 500 ? 'error' : 'warn');
+      return send(res, e.status || 400, { error: e.message, code: e.code });
+    }
+    if (e instanceof SyntaxError) { log('import', { status: 400, code: 'bad_json', ms: Date.now() - t0 }, 'warn'); return send(res, 400, { error: 'The request was not valid JSON.', code: 'bad_json' }); }
+    log('import', { status: 500, code: 'server', ...input, ms: Date.now() - t0, ...errorFields(e) }, 'error');
     return send(res, 500, { error: 'Something went wrong on the server.', code: 'server' });
   }
 }

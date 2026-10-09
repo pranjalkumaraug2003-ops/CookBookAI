@@ -101,6 +101,10 @@ const FAKE_YT = () => {
   check('phone: the video sits exactly over its frame', v.dx < 2 && v.layout === 'vfar', JSON.stringify(v));
   await look('ph17-video');
   check('phone: no page errors', errors.length === 0, errors.join(' | '));
+  await page.goto(base + '/privacy.html');
+  const pw = await C(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+  check('privacy page: no sideways scroll on a phone', pw.sw <= pw.cw, pw);
+  await page.screenshot({ path: path.join(outDir, 'phone-privacy.png') });
   const failed = results.filter((r) => !r.ok);
   console.log(results.map((r) => `${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.ok ? '' : `  [${r.detail}]`}`).join('\n'));
   console.log(`\n${results.length - failed.length}/${results.length} passed`);
