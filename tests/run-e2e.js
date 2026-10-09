@@ -14,6 +14,7 @@ try {
   code ||= await run('tests/flow.cjs', ['tests/shots', `http://localhost:${port}/index.html?nosw`]);
   code ||= await run('tests/product.cjs', ['tests/shots', `http://localhost:${port}`]);
   code ||= await run('tests/tour.cjs', ['tests/shots', `http://localhost:${port}`]);
+  code ||= await run('tests/phone.cjs', ['tests/shots', `http://localhost:${port}`]);
 } finally {
   server.kill();
 }

@@ -1457,7 +1457,7 @@ function render() {
     const vid = videoOn() && !st.beats;
     const layout = st.beats ? 'tadka' : isNear() ? (vid ? 'vnear' : 'near') : (vid ? 'vfar' : 'far');
     mount(layout);
-    if (vid) ensureVideo();
+    if (vid) ensureVideo(); else closeVideo();
     setHTML($('Ltop'), topbar());
     if (layout === 'tadka') {
       setHTML($('Lbeats'), beatStrip(st));
@@ -1468,6 +1468,7 @@ function render() {
       else { setHTML($('Lback'), backHold()); setHTML($('Lnext'), nextHold()); }
     }
     setHTML($('Lbottom'), bottomBar(st));
+    if (vid) placeVideo();
     const hud = S.engaged && !S.alert && !S.sheet;
     setLayer($('Lhud'), hud ? `hud${S.engagedAt}` : null, hud ? gestureHud() : '');
     setLayer($('Lsheet'), S.sheet ? `sheet${S.sheet.created}` : null, sheetView());
@@ -1485,8 +1486,31 @@ function fit() {
   const bar = document.getElementById('tourBar');
   const top = document.body.classList.contains('touring') && bar ? bar.offsetHeight : 0;
   document.getElementById('viewport').style.top = `${top}px`;
-  const s = Math.min(window.innerWidth / 1180, (window.innerHeight - top) / 820);
+  const availH = window.innerHeight - top;
+  // A phone held upright gets its own layout: a 600 px wide screen as tall as the phone, instead of the
+  // tablet screen shrunk to a third of its size.
+  const portrait = window.innerWidth < availH * 0.85;
+  const W = portrait ? 600 : 1180;
+  const H = portrait ? Math.max(900, Math.round(availH * 600 / window.innerWidth)) : 820;
+  if (stage.classList.contains('portrait') !== portrait) { stage.classList.toggle('portrait', portrait); stage.querySelectorAll('.slot, .layer').forEach((el) => { el._html = null; el._key = undefined; }); }
+  stage.style.width = `${W}px`;
+  stage.style.height = `${H}px`;
+  const s = Math.min(window.innerWidth / W, availH / H);
   stage.style.transform = `scale(${s})`;
+  placeVideo();
+}
+
+// The video player sits outside the re-rendered layers, over the empty .vframe the layout leaves for it.
+function placeVideo() {
+  if (!videoHost) return;
+  const f = stage.querySelector('.vframe');
+  if (!f) return;
+  let x = 0; let y = 0;
+  for (let el = f; el && el !== stage; el = el.offsetParent) { x += el.offsetLeft; y += el.offsetTop; }
+  const css = `${x}px,${y}px,${f.offsetWidth}px,${f.offsetHeight}px`;
+  if (videoHost._pos === css) return;
+  videoHost._pos = css;
+  Object.assign(videoHost.style, { left: `${x}px`, top: `${y}px`, width: `${f.offsetWidth}px`, height: `${f.offsetHeight}px` });
 }
 window.addEventListener('resize', fit);
 fit();
