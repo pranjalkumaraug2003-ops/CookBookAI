@@ -560,3 +560,27 @@ body.touring .demo-fab { display: none; }
 #stage.portrait .cook > .main h1 { font-size: 56px !important; }
 #stage.portrait .timer .big[style] { font-size: 30px !important; }
 #stage.portrait .timer .row .big { font-size: 36px; }
+
+/* first-run setup and settings */
+.setup { position: absolute; inset: 0; padding: 24px 32px; display: flex; flex-direction: column; gap: 16px; overflow: auto; }
+.setup h1 { margin: 4px 0 0; font-size: 42px; line-height: 1.05; font-weight: 800; }
+.setup-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.scard { padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+.scard .sh { display: flex; align-items: center; gap: 10px; }
+.scard .st { font-size: 22px; font-weight: 800; flex: 1; }
+.scard .sb2 { font-size: 18px; line-height: 1.4; }
+.scard .sp { font-size: 15px; line-height: 1.4; color: var(--ink2); }
+.perm { font-size: 13px; font-weight: 800; padding: 3px 10px; border-radius: 999px; background: #EEF0F2; white-space: nowrap; }
+.perm.ok { background: #DCF2E3; color: #1D6B3A; }
+.perm.bad { background: var(--masala-tint); color: var(--masala-deep); }
+.tune { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+.tune .lbl { font-size: 14px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink2); }
+.tune-row { display: flex; flex-wrap: wrap; gap: 18px; }
+.tune-row label { display: flex; flex-direction: column; gap: 6px; font-size: 15px; font-weight: 700; color: var(--ink2); }
+.tune-row select { font-size: 17px; padding: 9px 11px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface); min-width: 200px; }
+.setup-btns { display: flex; flex-wrap: wrap; gap: 10px; }
+.pills.held { position: relative; border-radius: 999px; cursor: pointer; touch-action: none; }
+.pills .holdfill { position: absolute; left: 6px; right: auto; bottom: -6px; height: 4px; border-radius: 2px; background: var(--ink); width: 0; }
+#stage.portrait .setup { padding: 20px 18px; }
+#stage.portrait .setup h1 { font-size: 32px; }
+#stage.portrait .setup-grid { grid-template-columns: minmax(0, 1fr); }

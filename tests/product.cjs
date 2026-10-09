@@ -102,6 +102,16 @@ const FAKE_YT = () => {
   await page.uncheck('[data-flag="mic"]');
   await page.uncheck('[data-flag="camera"]');
   await page.click('[data-tap="start"]');
+  // First cook: the setup screen explains the microphone and camera before the browser asks.
+  await page.waitForSelector('.setup');
+  await shot('p03b-setup');
+  await noOverflow('setup screen');
+  const setupText = await C(() => document.querySelector('.setup').textContent);
+  check('setup: explains the microphone and camera before the first cook', /Microphone/.test(setupText) && /Camera/.test(setupText) && /recorded/.test(setupText));
+  await page.selectOption('[data-setting="whistle"]', 'less');
+  const tuned = await C(() => JSON.parse(localStorage.getItem('cookalong.settings.v1')).cfg.whistleDb);
+  check('setup: a sensitivity choice is saved on the device', tuned === -26, String(tuned));
+  await page.click('[data-tap="setup-taps"]');
   await C(() => { const S = window.__cookAlong.S; S.voiceState = 'listening'; S.camState = 'on'; });
   await shot('p04-cook-step1');
   await noOverflow('imported step 1');
@@ -136,6 +146,20 @@ const FAKE_YT = () => {
   check('cook: imported spoken lines contain no commands', spokenBad.length === 0, JSON.stringify(spokenBad));
   const swap = await C(() => window.__cookAlong.safeSpoken('Wait until done, then stir again and go back to the pan'));
   check('safe speech: command words are swapped out', swap && !/\b(wait|done|again|back)\b/i.test(swap), swap);
+
+  // Hard mute: hold the status pills for a second.
+  await C(() => window.__cookAlong.toggleMute());
+  await C(() => window.__cookAlong.render());
+  const muted = await C(() => ({ m: window.__cookAlong.S.muted, pill: document.querySelector('.pills').textContent }));
+  check('mute: the microphone and camera can be switched fully off', muted.m && /Muted/.test(muted.pill), JSON.stringify(muted));
+  const pb = await (await page.$('.pills')).boundingBox();
+  await page.mouse.move(pb.x + pb.width / 2, pb.y + pb.height / 2);
+  await page.mouse.down(); await page.waitForTimeout(500); await page.mouse.up();
+  const stillMuted = await C(() => window.__cookAlong.S.muted);
+  await page.mouse.down(); await page.waitForTimeout(1150); await page.mouse.up();
+  const unmuted = await C(() => window.__cookAlong.S.muted);
+  check('mute: half a second is not enough to unmute, a full second is', stillMuted === true && unmuted === false, JSON.stringify({ stillMuted, unmuted }));
+  await C(() => { const S = window.__cookAlong.S; S.voiceState = 'listening'; S.camState = 'on'; S.notice = null; });
 
   // ================================================================ 3. resume after a reload
   await C(() => { const c = window.__cookAlong; c.goToStep(4, { force: true, quiet: true }); c.render(); });

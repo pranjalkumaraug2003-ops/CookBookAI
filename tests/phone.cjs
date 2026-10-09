@@ -26,6 +26,8 @@ const FAKE_YT = () => {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.addInitScript(FAKE_YT);
+  await page.addInitScript(() => { try { if (!localStorage.getItem('cookalong.settings.v1')) localStorage.setItem('cookalong.settings.v1', JSON.stringify({ setupDone: true })); } catch (_) { /* ignore */ } });
+
   const C = (fn, ...a) => page.evaluate(fn, ...a);
   const voice = (intent, extra = {}) => C(([i, e]) => { const c = window.__cookAlong; c.handleIntent({ intent: i, word: e.word || i, heard: e.heard || i, ...e }, { kind: 'voice', word: e.word || i, heard: e.heard || i }); c.render(); }, [intent, extra]);
   const overflow = () => C(() => {

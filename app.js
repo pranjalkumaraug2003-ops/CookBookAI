@@ -130,7 +130,7 @@ function tick() {
   if (S.notice && Date.now() > S.notice.until) S.notice = null;
   if (S.sheet && S.sheet.until && Date.now() > S.sheet.until) S.sheet = null;
   // Screens with real buttons and text boxes only re-render on input; re-rendering mid-click or mid-typing would swallow it.
-  if (!S.holding && !['start', 'library', 'add', 'review'].includes(S.screen)) render();
+  if (!S.holding && !['start', 'library', 'add', 'review', 'setup'].includes(S.screen)) render();
 }
 
 const laneChime = (potId) => { const l = lane(potId); return l ? l.chime : 'soft'; };
@@ -711,7 +711,7 @@ function resumeSession(sess) {
 // ---------------------------------------------------------------- sensing hookup
 let recognizer = null;
 function startVoice() {
-  if (!S.flags.voice) { S.voiceState = 'off'; return; }
+  if (!S.flags.voice || S.muted) { S.voiceState = 'off'; return; }
   if (recognizer) recognizer.stop();
   recognizer = createRecognizer({
     lang: S.flags.lang,
@@ -754,16 +754,21 @@ nearDetector.onPresence = (present) => {
   }
 };
 
+let camStream = null;
+let camLoopStop = null;
+let visionModels = null;
+let micStop = null;
+
 async function startCameraAndGestures() {
-  if (!S.flags.camera) { S.camState = 'off'; return; }
+  if (!S.flags.camera || S.muted) { S.camState = 'off'; return; }
   try {
     S.camState = 'starting';
-    await startCamera(camEl);
+    camStream = await startCamera(camEl);
     S.camState = 'loading';
-    const models = await loadVision();
+    visionModels = visionModels || await loadVision();
     S.camState = 'on';
     log('camera: gestures ready');
-    runVisionLoop(camEl, models, {
+    camLoopStop = runVisionLoop(camEl, visionModels, {
       onHand: (hand, t) => gestures.feed(hand, t),
       onFace: (ratio, t) => { S.faceRatio = ratio; nearDetector.feed(ratio, t); },
     });
@@ -774,9 +779,9 @@ async function startCameraAndGestures() {
 }
 
 async function startMicSensing() {
-  if (!S.flags.mic) { S.micState = 'off'; return; }
+  if (!S.flags.mic || S.muted) { S.micState = 'off'; return; }
   try {
-    await startMic({
+    micStop = await startMic({
       getConfig: () => CFG,
       onLevel: (db, floor, ratio) => { S.level = { db, floor, ratio }; },
       onLoudChange: (loud) => { S.loudAuto = loud; log(`mic: ${loud ? 'too loud' : 'quiet again'}`); },
@@ -792,9 +797,32 @@ async function startMicSensing() {
   }
 }
 
+// Hard mute: the microphone and camera are switched off, not just ignored, and the browser's own
+// recording indicators go out. Hold the status pills for a second to mute or unmute.
+function stopSensors() {
+  if (recognizer) { recognizer.stop(); recognizer = null; }
+  if (micStop) { try { micStop(); } catch (_) { /* ignore */ } micStop = null; }
+  if (camLoopStop) { camLoopStop(); camLoopStop = null; }
+  if (camStream) { camStream.getTracks().forEach((t) => t.stop()); camStream = null; camEl.srcObject = null; }
+  Object.assign(S, { voiceState: 'off', camState: 'off', micState: 'off', loudAuto: false, nearAuto: false, engaged: false });
+}
+
+function toggleMute() {
+  S.muted = !S.muted;
+  if (S.muted) {
+    stopSensors();
+    stopSpeaking();
+    S.notice = { created: Date.now(), pot: 'soft', text: 'Muted: microphone and camera are off', sub: 'Hold the status pills for a second to turn them back on. Timers keep running.', until: Date.now() + 8000 };
+  } else {
+    S.notice = { created: Date.now(), pot: 'soft', text: 'Listening and watching again', sub: '', until: Date.now() + 4000 };
+    startSensors();
+  }
+  log(S.muted ? 'muted' : 'unmuted');
+}
+
 function startSensors() {
   // The tour simulates every input, so it never asks for the microphone or camera.
-  if (S.demo) return;
+  if (S.demo || S.muted) return;
   keepScreenOn();
   startVoice();
   // Camera and mic stay on between sessions, so a second cook doesn't open them twice.
@@ -839,7 +867,7 @@ stage.addEventListener('pointerdown', (e) => {
   S.holding = holding;
   const animate = () => {
     if (S.holding !== holding) return;
-    const p = Math.min(1, (now() - t0) / HOLD_MS);
+    const p = Math.min(1, (now() - t0) / (Number(el.dataset.holdMs) || HOLD_MS));
     if (ring) ring.setAttribute('stroke-dashoffset', String(264 * (1 - p)));
     if (bar) bar.style.width = `${p * 100}%`;
     if (p >= 1) { holding.done = true; S.holding = null; resetHold(holding); runHold(action); render(); return; }
@@ -869,6 +897,7 @@ function runHold(action) {
   else if (action === 'back') back(via);
   else if (action === 'ack') doAck(via);
   else if (action === 'close') closeSheet();
+  else if (action === 'mute') { toggleMute(); return; }
   else if (action === 'video') { if (videoCtl) { if (videoCtl.playing()) videoCtl.pause(); else { S.video.waiting = false; videoCtl.play(); } } }
   else if (action.startsWith('tick:')) tickItem(Number(action.slice(5)), via, { toggle: true });
   persistNow();
@@ -891,13 +920,27 @@ stage.addEventListener('click', (e) => {
   if (lib.onTap(a, el, e)) return;
   if (a === 'minus') S.servings = Math.max(1, S.servings - 1);
   if (a === 'plus') S.servings = Math.min(12, S.servings + 1);
-  if (a === 'start') startCooking();
+  if (a === 'start') { if (S.setupDone || S.demo) startCooking(); else { S.setupMode = 'first'; S.screen = 'setup'; refreshPerms(); } }
+  if (a === 'settings') { S.setupMode = 'settings'; S.screen = 'setup'; refreshPerms(); }
+  if (a === 'setup-allow') { allowAndStart(true); return; }
+  if (a === 'setup-nocam') { allowAndStart(false); return; }
+  if (a === 'setup-taps') { Object.assign(S.flags, { voice: false, mic: false, camera: false }); S.setupDone = true; saveSettings(); startCooking(); }
+  if (a === 'setup-done') { S.screen = 'start'; }
   if (a === 'restart') { S.screen = 'start'; }
   if (a === 'library') { S.screen = 'library'; }
   render();
 });
 stage.addEventListener('change', (e) => {
   if (lib.onChange(e)) return;
+  const set = e.target.closest('[data-setting]');
+  if (set) {
+    const v = set.value;
+    if (set.dataset.setting === 'lang') S.flags.lang = v;
+    if (set.dataset.setting === 'whistle') CFG.whistleDb = WHISTLE_LEVELS[v];
+    if (set.dataset.setting === 'loud') CFG.loudDb = LOUD_LEVELS[v];
+    saveSettings();
+    return;
+  }
   const el = e.target.closest('[data-flag]');
   if (!el) return;
   S.flags[el.dataset.flag] = el.checked;
@@ -905,7 +948,45 @@ stage.addEventListener('change', (e) => {
 });
 stage.addEventListener('input', (e) => { lib.onInput(e); });
 
-function saveSettings() { store.saveSettings({ flags: S.flags, cfg: CFG }); }
+function saveSettings() { store.saveSettings({ flags: S.flags, cfg: CFG, setupDone: !!S.setupDone }); }
+
+// Plain-language sensitivity choices, mapped to the thresholds the demo panel tunes in dB.
+const WHISTLE_LEVELS = { less: -26, normal: -32, more: -38 };
+const LOUD_LEVELS = { early: -42, normal: -38, late: -32 };
+const nearest = (map, v) => Object.entries(map).reduce((a, b) => (Math.abs(b[1] - v) < Math.abs(a[1] - v) ? b : a))[0];
+
+async function permState(name) {
+  try { return (await navigator.permissions.query({ name })).state; } catch (_) { return 'unknown'; }
+}
+async function refreshPerms() {
+  S.perms = { mic: await permState('microphone'), cam: await permState('camera') };
+  render();
+}
+
+// Asks the browser for the microphone (and camera) once, before cooking, so the prompts don't appear
+// mid-recipe with messy hands; then starts.
+async function allowAndStart(withCamera) {
+  S.setupBusy = true;
+  render();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: withCamera });
+    stream.getTracks().forEach((t) => t.stop());
+    S.flags.camera = withCamera;
+    S.flags.mic = true;
+    S.flags.voice = true;
+    S.setupDone = true;
+    S.setupError = null;
+    saveSettings();
+    S.setupBusy = false;
+    startCooking();
+  } catch (e) {
+    S.setupBusy = false;
+    S.setupError = e && e.name === 'NotAllowedError'
+      ? 'The browser blocked it. Click the lock or settings icon next to the address, allow the microphone and camera for this site, then try again.'
+      : e && e.name === 'NotFoundError' ? 'No microphone or camera was found on this device. You can still cook with taps and the keyboard.' : `It didn't work (${e && e.message ? e.message : e}).`;
+    await refreshPerms();
+  }
+}
 
 // ---------------------------------------------------------------- rendering
 function seg(i) {
@@ -917,6 +998,7 @@ function seg(i) {
 function pills() {
   const loud = isLoud();
   let voice;
+  if (S.muted) return `<div class="pills held" data-hold="mute" data-hold-ms="1000" title="Hold for a second to unmute"><div class="pill dark">${I.micOff(20, '#fff')}<div>Muted · hold to unmute</div></div><div class="holdfill" data-fill></div></div>`;
   if (S.voiceState === 'demo') voice = `<div class="pill demo">${I.mic(20)}<div>Voice: simulated</div></div>`;
   else if (!S.flags.voice || S.voiceState === 'off') voice = `<div class="pill off">${I.micOff(20, '#4B5056')}<div>Voice off</div></div>`;
   else if (S.voiceState === 'unsupported' || S.voiceState === 'blocked') voice = `<div class="pill off">${I.micOff(20, '#4B5056')}<div>No voice here</div></div>`;
@@ -937,7 +1019,8 @@ function pills() {
   else if (S.engaged) cam = `<div class="pill dark">${I.palm(20, '#fff')}<div>Palm seen</div></div>`;
   else if (isNear()) cam = `<div class="pill dark">${I.camera(20, '#fff')}<div>You're close</div></div>`;
   else cam = `<div class="pill">${I.palm(20)}<div>Gestures</div>${arm}</div>`;
-  return `<div class="pills">${voice}${cam}</div>`;
+  const holdable = S.screen === 'cook' && !S.demo;
+  return `<div class="pills${holdable ? ' held' : ''}"${holdable ? ' data-hold="mute" data-hold-ms="1000" title="Hold for a second to mute the microphone and camera"' : ''}>${voice}${cam}${holdable ? '<div class="holdfill" data-fill></div>' : ''}</div>`;
 }
 
 function topbar() {
@@ -1341,7 +1424,7 @@ function startView() {
   return `<div class="start">
     <div class="start-left">
       <div style="display:flex;flex-direction:column;gap:18px">
-        <div class="crumbrow"><button type="button" class="crumb-btn" data-tap="library">${I.left(18, '#171B20', 2.4)}<span>Recipes</span></button><div class="crumb">${srcLine}</div>${builtin ? '' : `<button type="button" class="crumb-btn" data-tap="edit">${I.edit(18)}<span>Edit</span></button>`}</div>
+        <div class="crumbrow"><button type="button" class="crumb-btn" data-tap="library">${I.left(18, '#171B20', 2.4)}<span>Recipes</span></button><div class="crumb">${srcLine}</div>${builtin ? '' : `<button type="button" class="crumb-btn" data-tap="edit">${I.edit(18)}<span>Edit</span></button>`}<button type="button" class="crumb-btn" data-tap="settings">${I.mic(18)}<span>Settings</span></button></div>
         <h1${r.title.length > 34 ? ' class="long"' : ''}>${esc(r.title)}</h1>
         <div class="chips">${chips}</div>
         <div class="card serves">
@@ -1371,6 +1454,39 @@ function startView() {
       ${r.finishLine ? `<div style="font-size:18px;color:var(--ink2)">${T(r.finishLine)}</div>` : ''}
       ${S.notes[0] ? `<div class="card lastnote">${I.mic(22, '#171B20')}<div><div class="k">Your note from last time</div><div class="t">“${esc(S.notes[0])}”</div></div></div>` : ''}
     </div>
+  </div>`;
+}
+
+function setupView() {
+  const first = S.setupMode === 'first';
+  const st = (x) => (x === 'granted' ? '<span class="perm ok">Allowed</span>' : x === 'denied' ? '<span class="perm bad">Blocked</span>' : '<span class="perm">Not asked yet</span>');
+  const p = S.perms || {};
+  const sel = (name, value, opts) => `<select data-setting="${name}">${opts.map(([v, l]) => `<option value="${v}" ${v === value ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  return `<div class="setup">
+    <div class="lib-head"><div><button type="button" class="crumb-btn" data-tap="setup-done">${I.left(18, '#171B20', 2.4)}<span>${first ? 'Back to the recipe' : 'Back'}</span></button><div class="lib-k">${first ? 'Before your first cook' : 'Settings'}</div><h1>${first ? 'What Cook-Along uses, and why' : 'Microphone, camera and tuning'}</h1></div></div>
+    <div class="setup-grid">
+      <div class="card scard"><div class="sh">${I.mic(26)}<div class="st">Microphone</div>${st(p.mic)}</div>
+        <div class="sb2">Hears your commands (“aage”, “ho gaya”) and counts cooker whistles, so your hands never need to touch the screen.</div>
+        <div class="sp">Whistles and noise are measured on this device. Spoken commands go to the browser's speech service (Google, in Chrome) to be recognised. Nothing is recorded.</div></div>
+      <div class="card scard"><div class="sh">${I.camera(26)}<div class="st">Camera</div>${st(p.cam)}</div>
+        <div class="sb2">Sees a palm, a swipe or a thumbs up, and notices when you come close so big elbow targets can appear.</div>
+        <div class="sp">Runs entirely on this device. No picture leaves it and nothing is recorded.</div></div>
+      <div class="card scard"><div class="sh">${I.lock(26)}<div class="st">Your control</div></div>
+        <div class="sb2">Hold the status pills at the top of the cooking screen for a second to switch the microphone and camera fully off, and again to switch them back on.</div>
+        <div class="sp">The screen stays awake while you cook, so a recipe never locks mid-step.</div></div>
+    </div>
+    <div class="card tune">
+      <div class="lbl">Kitchen tuning, saved on this device</div>
+      <div class="tune-row">
+        <label>Voice language ${sel('lang', S.flags.lang, [['en-IN', 'English (India)'], ['hi-IN', 'Hindi (India)']])}</label>
+        <label>Whistle sensitivity ${sel('whistle', nearest(WHISTLE_LEVELS, CFG.whistleDb), [['less', 'Less (busy kitchen)'], ['normal', 'Normal'], ['more', 'More (quiet kitchen)']])}</label>
+        <label>Pause voice when it's ${sel('loud', nearest(LOUD_LEVELS, CFG.loudDb), [['early', 'a little loud'], ['normal', 'loud'], ['late', 'very loud']])}</label>
+      </div>
+    </div>
+    ${S.setupError ? `<div class="err">${I.warn(20, '#AA3606')}<div>${esc(S.setupError)}</div></div>` : ''}
+    <div class="setup-btns">${first
+    ? `<button type="button" class="primary" data-tap="setup-allow" ${S.setupBusy ? 'disabled' : ''}>${S.setupBusy ? '<span class="spin"></span>' : I.check(22, '#fff')}<span>${S.setupBusy ? 'Waiting for the browser…' : 'Allow and start cooking'}</span></button><button type="button" class="ghost" data-tap="setup-nocam" ${S.setupBusy ? 'disabled' : ''}>Microphone only</button><button type="button" class="ghost" data-tap="setup-taps" ${S.setupBusy ? 'disabled' : ''}>Neither (taps and keys)</button>`
+    : '<button type="button" class="primary" data-tap="setup-done">Done</button>'}</div>
   </div>`;
 }
 
@@ -1446,7 +1562,10 @@ const tour = createTour({
 function render() {
   const $ = (id) => document.getElementById(id);
   if (S.screen !== 'cook') closeVideo();
-  if (['library', 'add', 'review'].includes(S.screen)) {
+  if (S.screen === 'setup') {
+    mount('screen');
+    setHTML($('Lscreen'), setupView());
+  } else if (['library', 'add', 'review'].includes(S.screen)) {
     mount('screen');
     setHTML($('Lscreen'), lib.view());
   } else if (S.screen === 'start' || S.screen === 'done') {
@@ -1631,6 +1750,7 @@ window.addEventListener('keydown', (e) => {
 // Test hook: lets an automated check drive the app without a mic or camera.
 window.__cookAlong = {
   get tour() { return tour; },
+  toggleMute,
   S, CFG, handleIntent, parseCommand, addWhistle, next, back, startCooking, render, goToStep, openRecipe, store, safeSpoken, onTranscript,
   get video() { return videoCtl; },
 };
@@ -1639,6 +1759,7 @@ window.__cookAlong = {
 const settings = store.loadSettings({});
 if (settings.flags) Object.assign(S.flags, settings.flags);
 if (settings.cfg) Object.assign(CFG, settings.cfg);
+S.setupDone = !!settings.setupDone;
 S.notes = store.getNotes(S.recipe.id);
 const saved = store.loadSession();
 if (/[?&]tour=1\b/.test(location.search)) {

@@ -28,6 +28,7 @@ const check = (name, ok, detail = '') => results.push({ name, ok: !!ok, detail }
     }
   });
 
+  await page.addInitScript(() => { try { if (!localStorage.getItem('cookalong.settings.v1')) localStorage.setItem('cookalong.settings.v1', JSON.stringify({ setupDone: true })); } catch (_) { /* ignore */ } });
   await page.goto(url, { waitUntil: 'load' });
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(300);
