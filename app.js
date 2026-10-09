@@ -7,6 +7,7 @@ import { I, svg, vesselIcon } from './icons.js';
 import * as store from './store.js';
 import { createVideo, fmtTime } from './video.js';
 import { libraryScreens } from './library.js';
+import { createTour } from './tour.js';
 
 const stage = document.getElementById('stage');
 const demoEl = document.getElementById('demo');
@@ -224,7 +225,7 @@ function notify({ pot, text, sub, speakIt, spoken }) {
 }
 
 function echo(via, text, { undoable = true } = {}) {
-  const heard = via.kind === 'voice' ? `Heard “${via.word || via.heard}”: ` : via.kind === 'gesture' ? `${via.label}: ` : via.kind === 'hold' ? 'Held: ' : '';
+  const heard = via.sim ? `Simulated “${via.word || via.heard}”: ` : via.kind === 'voice' ? `Heard “${via.word || via.heard}”: ` : via.kind === 'gesture' ? `${via.label}: ` : via.kind === 'hold' ? 'Held: ' : '';
   S.echo = { created: Date.now(), text: heard + text, undoable, until: Date.now() + 5000 };
 }
 
@@ -674,7 +675,7 @@ function persist() {
   persistNow();
 }
 function persistNow() {
-  if (S.screen !== 'cook' && S.screen !== 'done') return;
+  if (S.demo || (S.screen !== 'cook' && S.screen !== 'done')) return;
   lastSave = Date.now();
   store.saveSession(sessionData());
 }
@@ -792,6 +793,8 @@ async function startMicSensing() {
 }
 
 function startSensors() {
+  // The tour simulates every input, so it never asks for the microphone or camera.
+  if (S.demo) return;
   keepScreenOn();
   startVoice();
   // Camera and mic stay on between sessions, so a second cook doesn't open them twice.
@@ -884,6 +887,7 @@ stage.addEventListener('click', (e) => {
   const el = e.target.closest('[data-tap]');
   if (!el) return;
   const a = el.dataset.tap;
+  if (a === 'tour') { tour.start(); return; }
   if (lib.onTap(a, el, e)) return;
   if (a === 'minus') S.servings = Math.max(1, S.servings - 1);
   if (a === 'plus') S.servings = Math.min(12, S.servings + 1);
@@ -913,7 +917,8 @@ function seg(i) {
 function pills() {
   const loud = isLoud();
   let voice;
-  if (!S.flags.voice || S.voiceState === 'off') voice = `<div class="pill off">${I.micOff(20, '#4B5056')}<div>Voice off</div></div>`;
+  if (S.voiceState === 'demo') voice = `<div class="pill demo">${I.mic(20)}<div>Voice: simulated</div></div>`;
+  else if (!S.flags.voice || S.voiceState === 'off') voice = `<div class="pill off">${I.micOff(20, '#4B5056')}<div>Voice off</div></div>`;
   else if (S.voiceState === 'unsupported' || S.voiceState === 'blocked') voice = `<div class="pill off">${I.micOff(20, '#4B5056')}<div>No voice here</div></div>`;
   else if (loud) voice = `<div class="pill off">${I.micOff(20, '#4B5056')}<div>Too loud</div></div>`;
   else if (isSpeaking()) voice = `<div class="pill dark">${I.speaker(20, '#fff')}<div>Reading aloud</div></div>`;
@@ -924,7 +929,9 @@ function pills() {
   const arm = S.armProgress != null
     ? `<svg class="arm" viewBox="0 0 100 40" preserveAspectRatio="none"><rect x="1.5" y="1.5" width="97" height="37" rx="18.5" fill="none" stroke="#F26829" stroke-width="3" pathLength="100" stroke-dasharray="${(S.armProgress * 100).toFixed(1)} 100"/></svg>`
     : '';
-  if (!S.flags.camera || S.camState === 'off') cam = `<div class="pill off">${I.camera(20, '#4B5056')}<div>Camera off</div></div>`;
+  if (S.camState === 'demo' && S.engaged) cam = `<div class="pill dark">${I.palm(20, '#fff')}<div>Palm (simulated)</div></div>`;
+  else if (S.camState === 'demo') cam = `<div class="pill demo">${I.palm(20)}<div>Gestures: simulated</div></div>`;
+  else if (!S.flags.camera || S.camState === 'off') cam = `<div class="pill off">${I.camera(20, '#4B5056')}<div>Camera off</div></div>`;
   else if (S.camState === 'starting' || S.camState === 'loading') cam = `<div class="pill">${I.palm(20)}<div>Gestures loading</div></div>`;
   else if (S.camState === 'unavailable') cam = `<div class="pill off">${I.palm(20, '#4B5056')}<div>No gestures</div></div>`;
   else if (S.engaged) cam = `<div class="pill dark">${I.palm(20, '#fff')}<div>Palm seen</div></div>`;
@@ -1431,6 +1438,10 @@ function mount(layout) {
 }
 
 const lib = libraryScreens({ S, render: () => render(), openRecipe, store, log });
+const tour = createTour({
+  S, DAL: DAL_TADKA, store, render: () => render(), fit: () => fit(), openRecipe, startCooking, goToStep, handleIntent, addWhistle, showRecap, finish, stopSpeaking,
+  thumbsUp: () => gestures.h.onThumb(),
+});
 
 function render() {
   const $ = (id) => document.getElementById(id);
@@ -1470,7 +1481,11 @@ function render() {
 
 // ---------------------------------------------------------------- stage scaling
 function fit() {
-  const s = Math.min(window.innerWidth / 1180, window.innerHeight / 820);
+  // The tour bar sits above the tablet screen, never on it, so the screen shrinks to make room.
+  const bar = document.getElementById('tourBar');
+  const top = document.body.classList.contains('touring') && bar ? bar.offsetHeight : 0;
+  document.getElementById('viewport').style.top = `${top}px`;
+  const s = Math.min(window.innerWidth / 1180, (window.innerHeight - top) / 820);
   stage.style.transform = `scale(${s})`;
 }
 window.addEventListener('resize', fit);
@@ -1591,6 +1606,7 @@ window.addEventListener('keydown', (e) => {
 
 // Test hook: lets an automated check drive the app without a mic or camera.
 window.__cookAlong = {
+  get tour() { return tour; },
   S, CFG, handleIntent, parseCommand, addWhistle, next, back, startCooking, render, goToStep, openRecipe, store, safeSpoken, onTranscript,
   get video() { return videoCtl; },
 };
@@ -1601,7 +1617,10 @@ if (settings.flags) Object.assign(S.flags, settings.flags);
 if (settings.cfg) Object.assign(CFG, settings.cfg);
 S.notes = store.getNotes(S.recipe.id);
 const saved = store.loadSession();
-if (!(saved && resumeSession(saved))) {
+if (/[?&]tour=1\b/.test(location.search)) {
+  store.clearSession();
+  setTimeout(() => tour.start(), 0);
+} else if (!(saved && resumeSession(saved))) {
   // A link like /#recipe=dal-tadka opens that recipe's page (used by the installed app's shortcut).
   const m = location.hash.match(/recipe=([\w-]+)/);
   const r = m && store.getRecipe(m[1]);

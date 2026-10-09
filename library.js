@@ -85,7 +85,7 @@ export function libraryScreens({ S, render, openRecipe, store, log }) {
     return `<div class="lib">
       <div class="lib-head">
         <div><div class="lib-k">Cook-Along</div><h1>Your recipes</h1></div>
-        <button type="button" class="primary" data-tap="add">${I.plus(24, '#fff')}<span>Add a recipe</span></button>
+        <div class="lib-btns"><button type="button" class="ghost" data-tap="tour">${I.play(18)}<span>Take the 2-minute tour</span></button><button type="button" class="primary" data-tap="add">${I.plus(24, '#fff')}<span>Add a recipe</span></button></div>
       </div>
       <div class="lib-sub">Pick one to cook hands-free. Add your own from a YouTube video, a recipe website or a chatbot answer.${S.online ? '' : ` <b>${I.wifiOff(16)} Offline:</b> saved recipes still work.`}</div>
       <div class="rgrid">${cards}<button type="button" class="rcard addcard-tile" data-tap="add">${I.plus(30)}<div class="rtitle">Add a recipe</div><div class="rmeta">Paste a YouTube link, a recipe website or a chatbot answer. You check the pots and timers before cooking.</div></button></div>

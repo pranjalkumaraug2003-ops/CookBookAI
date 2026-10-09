@@ -424,3 +424,21 @@ input, textarea, select { font-family: inherit; color: var(--ink); -webkit-user-
 .addcard-tile { border: 2px dashed var(--line); box-shadow: none; background: transparent; padding: 20px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; text-align: left; cursor: pointer; min-height: 170px; }
 .codeline { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700; color: var(--ink2); }
 .codeline input { font-size: 17px; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 12px; width: 220px; }
+
+/* reviewer tour: a bar above the tablet screen */
+#tourBar { position: fixed; left: 0; right: 0; top: 0; z-index: 120; background: #171B20; color: #fff; font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; }
+#tourBar:empty { display: none; }
+.tour-in { max-width: 1180px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 20px; }
+.tour-txt { flex: 1 1 auto; min-width: 0; }
+.tour-k { font-size: 13px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: #C9CCD1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tour-sim { letter-spacing: 0; text-transform: none; font-weight: 700; background: #F7C323; color: #171B20; border-radius: 999px; padding: 2px 10px; font-size: 13px; }
+.tour-t { font-size: 20px; font-weight: 800; margin-top: 2px; }
+.tour-b { font-size: 15px; line-height: 1.35; color: #DDE0E4; margin-top: 2px; }
+.tour-btns { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.tour-btn { height: 44px; padding: 0 16px; border-radius: 14px; border: 1.5px solid #4B5056; background: transparent; color: #fff; font: 700 16px 'Atkinson Hyperlegible Next', system-ui, sans-serif; cursor: pointer; }
+.tour-btn.primary-t { background: #fff; color: #171B20; border-color: #fff; }
+.tour-btn.ghost-t { border-color: transparent; color: #C9CCD1; }
+@media (max-width: 760px) { .tour-in { flex-direction: column; align-items: stretch; gap: 10px; } .tour-b { font-size: 14px; } }
+.pill.demo { border-style: dashed; border-color: #8D5E00; background: #FDEEC1; }
+.lib-btns { display: flex; gap: 10px; align-items: center; }
+body.touring .demo-fab { display: none; }
