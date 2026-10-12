@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cook-Along QA lab</title>
+<link rel="stylesheet" href="lab.css">
+</head>
+<body>
+  <header>
+    <div class="k" id="kicker">Cook-Along QA lab</div>
+    <div class="st" id="status">Loading…</div>
+  </header>
+  <main>
+    <section class="prompt">
+      <div class="big" id="big"></div>
+      <div class="sub" id="sub"></div>
+      <div class="count" id="count"></div>
+      <div class="bar"><div id="barFill"></div></div>
+      <div class="btns" id="btns"></div>
+    </section>
+    <section class="side">
+      <div class="preview" id="previewWrap" hidden><canvas id="preview" width="640" height="480"></canvas><div class="live" id="live"></div></div>
+      <div id="panel"></div>
+      <pre id="log"></pre>
+    </section>
+  </main>
+  <video id="cam" playsinline muted></video>
+  <script type="module" src="lab.js"></script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+/* Readable from 5 ft: the person doing the session stands at "stove" distance for part of it. */
+* { box-sizing: border-box; }
+body { margin: 0; background: #FAF9F6; color: #171B20; font: 18px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif; min-height: 100vh; }
+header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: #171B20; color: #fff; gap: 16px; }
+header .k { font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; font-size: 15px; }
+header .st { font-size: 15px; color: #C9CCD1; text-align: right; }
+main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 24px; padding: 24px; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+.prompt { background: #fff; border: 1px solid #DDE0E4; border-radius: 24px; padding: 32px; display: flex; flex-direction: column; gap: 18px; min-height: 70vh; }
+.big { font-size: clamp(40px, 6vw, 84px); font-weight: 800; line-height: 1.05; letter-spacing: -0.01em; }
+.big.go { color: #1F7A4D; }
+.big.wait { color: #AA3606; }
+.sub { font-size: clamp(22px, 2.4vw, 32px); color: #2B3036; }
+.count { font-size: clamp(64px, 9vw, 140px); font-weight: 800; font-variant-numeric: tabular-nums; color: #2553B6; line-height: 1; }
+.bar { height: 18px; background: #EEF0F2; border-radius: 999px; overflow: hidden; }
+.bar > div { height: 100%; width: 0; background: #F26829; transition: width 0.1s linear; }
+.btns { display: flex; flex-wrap: wrap; gap: 12px; margin-top: auto; }
+button { font: inherit; font-weight: 700; font-size: 20px; border: 0; border-radius: 14px; padding: 14px 22px; background: #EEF0F2; color: #171B20; cursor: pointer; min-height: 56px; }
+button.primary { background: #171B20; color: #fff; }
+button.good { background: #1F7A4D; color: #fff; }
+button:disabled { opacity: 0.5; cursor: default; }
+.side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.preview { position: relative; border-radius: 18px; overflow: hidden; background: #000; }
+.preview canvas { width: 100%; height: auto; display: block; transform: scaleX(-1); }
+.live { position: absolute; left: 12px; top: 12px; background: rgba(0,0,0,0.65); color: #fff; padding: 8px 12px; border-radius: 10px; font: 700 20px/1.3 ui-monospace, monospace; }
+#panel { display: flex; flex-direction: column; gap: 10px; }
+#log { background: #171B20; color: #C9CCD1; border-radius: 14px; padding: 12px; font: 13px/1.4 ui-monospace, monospace; max-height: 34vh; overflow: auto; white-space: pre-wrap; margin: 0; }
+#cam { position: fixed; width: 1px; height: 1px; opacity: 0; left: -10px; top: -10px; }
+.voice { background: #fff; border: 1px solid #DDE0E4; border-radius: 16px; padding: 14px 16px; display: grid; gap: 8px; }
+.voice.app { border: 3px solid #F26829; }
+.voice .n { font-weight: 800; }
+.voice .m { font-size: 14px; color: #4B5056; }
+.voice .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.voice button { font-size: 16px; min-height: 44px; padding: 8px 14px; }
+.voice select { font: inherit; font-size: 16px; padding: 8px; border-radius: 10px; }
+.tag { display: inline-block; font-size: 13px; font-weight: 800; padding: 2px 8px; border-radius: 999px; background: #FFE4D6; color: #AA3606; }
+.list { max-height: 62vh; overflow: auto; display: grid; gap: 10px; }
