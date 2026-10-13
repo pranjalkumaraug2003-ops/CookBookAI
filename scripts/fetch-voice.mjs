@@ -37,7 +37,9 @@ function to16k(wav) {
 const manifestPath = path.join(dir, 'voice.json');
 const manifest = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')) : {};
 let made = 0; let failed = 0;
+const deadline = Date.now() + 40 * 60 * 1000; // stop after 40 minutes; a re-run picks up where this one left off
 for (const { t, l } of lines) {
+  if (Date.now() > deadline) { console.log('time is up; run again to fetch the rest'); failed++; continue; }
   const key = `${l}|${t}`;
   const file = `v-${fnv(key)}.wav`;
   if (manifest[key] && fs.existsSync(path.join(dir, manifest[key]))) continue;
@@ -49,6 +51,7 @@ for (const { t, l } of lines) {
       if (res.ok && buf.subarray(0, 4).toString() === 'RIFF' && buf.length > 2000) {
         fs.writeFileSync(path.join(dir, file), to16k(buf));
         manifest[key] = file; ok = true; made++;
+        fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 1)); // keep progress if the run is cut short
         console.log(`ok   ${file}  ${t.slice(0, 60)}`);
       } else {
         console.log(`wait ${res.status} (${attempt + 1}/6)  ${t.slice(0, 40)}`);
