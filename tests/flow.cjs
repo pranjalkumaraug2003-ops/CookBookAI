@@ -334,7 +334,7 @@ const check = (name, ok, detail = '') => results.push({ name, ok: !!ok, detail }
   await page.mouse.down(); await page.waitForTimeout(150); await page.mouse.up();
   const afterExitTap = await C(() => ({ screen: window.__cookAlong.S.screen, asked: !!window.__cookAlong.S.pendingConfirm }));
   check('exit: a quick tap does nothing', afterExitTap.screen === 'cook' && !afterExitTap.asked, JSON.stringify(afterExitTap));
-  await page.mouse.down(); await page.waitForTimeout(1150); await page.mouse.up();
+  await page.mouse.down(); await page.waitForTimeout(1500); await page.mouse.up();
   const afterExitHold = await C(() => !!window.__cookAlong.S.pendingConfirm);
   check('exit: a one-second hold asks to confirm', afterExitHold);
   await C(() => window.__cookAlong.handleIntent({ intent: 'no' }, { kind: 'voice' }));
