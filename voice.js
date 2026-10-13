@@ -304,9 +304,15 @@ const WAIT_MS = 15000;
 async function getTtsAudioUrl(text, { hindi } = {}) {
   const url = await ttsUrlFor(text, { hindi });
   if (ttsUrlCache.has(url)) return ttsUrlCache.get(url);
+  const p = fetchTtsBlob(url);
   const blob = await Promise.race([
-    fetchTtsBlob(url),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('tts slow')), WAIT_MS)),
+    p,
+    new Promise((_, reject) => setTimeout(() => {
+      // Too slow for this line. If the server then fails outright, count it, so a voice server that
+      // is down (for example out of quota) hands over to the browser voice instead of going silent.
+      p.catch((e) => { if (e instanceof TtsHttpError) noteHardFail(); });
+      reject(new Error('tts slow'));
+    }, WAIT_MS)),
   ]);
   if (!ttsUrlCache.has(url)) ttsUrlCache.set(url, URL.createObjectURL(blob));
   return ttsUrlCache.get(url);
@@ -317,6 +323,7 @@ async function getTtsAudioUrl(text, { hindi } = {}) {
 let natural = 'unknown';
 let hardFails = 0;
 export function naturalVoiceState() { return natural; }
+function noteHardFail() { hardFails++; if (natural === 'unknown' || hardFails >= 2) natural = 'broken'; }
 
 function speakWithSpeechSynthesis(text, { hindi, id } = {}) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window) || !text) {
@@ -369,8 +376,7 @@ export function speak(text, { hindi, naturalVoice } = {}) {
     const hardFail = () => {
       if (settled) return;
       if (currentAudio) { try { currentAudio.pause(); } catch (_) {} currentAudio = null; }
-      hardFails++;
-      if (natural === 'unknown' || hardFails >= 2) natural = 'broken';
+      noteHardFail();
       if (natural === 'broken' && id === current) {
         settled = true;
         speakingNow = true;
