@@ -58,7 +58,7 @@ const S = {
 };
 // Sensing thresholds. These are starting guesses: tune them in the demo panel with your own cooker, kitchen and camera.
 // Tuned values are saved on this device, so the next cook starts with them.
-const CFG = { loudDb: -38, whistleDb: -32, whistleRatio: 0.5, whistleLowHz: 2000, whistleHighHz: 6000, nearEnter: 0.3 };
+const CFG = { loudDb: -38, whistleDb: -32, whistleRatio: 0.58, whistleLowHz: 1700, whistleHighHz: 6000, nearEnter: 0.22 };
 
 const R = () => S.recipe;
 const STEPS = () => R().steps;
@@ -645,7 +645,8 @@ function onTranscript(alts) {
     if (!cmd) continue;
     if (ownVoice && !BARGE_IN.includes(cmd.intent)) { log(`ignored while speaking: “${a}”`); return; }
     if (videoPlaying() && !['pause', 'stop'].includes(cmd.intent)) { log(`ignored while the video plays: “${a}”`); return; }
-    if (isLoud() && !['pause', 'stop'].includes(cmd.intent)) { log('ignored: too loud'); return; }
+    const loudOk = ['pause', 'stop'].includes(cmd.intent) || (cmd.intent === 'ack' && S.alert);
+    if (isLoud() && !loudOk) { log('ignored: too loud'); return; }
     handleIntent(cmd, { kind: 'voice', word: cmd.word, heard: cmd.heard });
     render();
     return;
@@ -743,7 +744,7 @@ const gestures = new GestureInterpreter({
 });
 
 const nearDetector = new NearDetector((near) => { S.nearAuto = near; log(`camera: ${near ? 'near' : 'far'}`); }, {
-  thresholds: () => ({ enter: CFG.nearEnter, exit: Math.max(0.05, CFG.nearEnter - 0.08) }),
+  thresholds: () => ({ enter: CFG.nearEnter, exit: Math.max(0.05, CFG.nearEnter - 0.06) }),
 });
 nearDetector.onPresence = (present) => {
   if (S.screen !== 'cook') return;
@@ -1184,12 +1185,12 @@ function timerChip(slot) {
 }
 
 function backHold() {
-  return `<button class="hold back" data-hold="back" aria-label="Back, hold to confirm">${I.left(56, '#171B20')}<div class="t">Back</div><div class="s">hold</div></button>`;
+  return `<button class="hold back" data-hold="back" aria-label="Back hold, hold half a second to confirm">${I.left(56, '#171B20')}<div class="t">Back</div><div class="s">hold</div></button>`;
 }
 
 function nextHold() {
   const nextLabel = S.step < STEPS().length - 1 ? T(STEPS()[S.step + 1].headline) : 'Finish';
-  return `<button class="hold next" data-hold="next" aria-label="Next, hold to confirm">
+  return `<button class="hold next" data-hold="next" aria-label="Next hold, hold half a second to confirm">
     <div class="ring"><svg class="r" width="96" height="96" viewBox="0 0 96 96"><circle cx="48" cy="48" r="42" fill="none" stroke="#3A3F46" stroke-width="8"/><circle data-ring cx="48" cy="48" r="42" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-dasharray="264 264" stroke-dashoffset="264" transform="rotate(-90 48 48)"/></svg>${I.right(48, '#fff')}</div>
     <div class="t">Next</div><div class="s">${nextLabel}<br>hold ½ s</div>
   </button>`;

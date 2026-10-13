@@ -5,7 +5,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 8000);
@@ -28,7 +28,7 @@ const server = http.createServer(async (req, res) => {
       const name = url.pathname.slice(5).replace(/[^\w-]/g, '');
       const file = path.join(root, 'api', `${name}.js`);
       if (!fs.existsSync(file)) { res.statusCode = 404; return res.end('{}'); }
-      const mod = await import(`${file}?t=${fs.statSync(file).mtimeMs}`);
+      const mod = await import(`${pathToFileURL(file).href}?t=${fs.statSync(file).mtimeMs}`);
       return mod.default(req, res);
     }
     let p = decodeURIComponent(url.pathname);

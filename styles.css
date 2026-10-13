@@ -475,7 +475,7 @@ body.touring .demo-fab { display: none; }
 #stage.portrait .topbar .title .a { font-size: 19px; white-space: normal; }
 #stage.portrait .progress { order: 3; width: 100%; }
 #stage.portrait .segs .seg { width: 12px; }
-#stage.portrait .pill { font-size: 14px; padding: 6px 10px; }
+#stage.portrait .pill { font-size: 16px; padding: 6px 10px; }
 #stage.portrait .pill .meter { display: none; }
 #stage.portrait .main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; row-gap: 12px; padding: 4px 16px 0; }
 #stage.portrait .stepcard { padding: 24px 24px 22px; }

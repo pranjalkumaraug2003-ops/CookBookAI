@@ -9,7 +9,8 @@ import { normalizeRecipe, DAL_TADKA, fmtQty, scaledQty } from '../recipe.js';
 import { extractRecipe, pageText, isoMinutes, assertPublicUrl, recipeToText } from '../api/_lib/page.js';
 import { draftToRecipe } from '../api/_lib/convert.js';
 import { toOpenApi, DRAFT_SCHEMA } from '../api/_lib/gemini.js';
-import { parseCommand } from '../voice.js';
+import { parseCommand, chooseVoice } from '../voice.js';
+import { GestureInterpreter, pickHand } from '../sensing.js';
 import { describeInput } from '../api/_lib/log.js';
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
@@ -114,6 +115,35 @@ check('log: a YouTube link is logged as a video', describeInput('https://youtu.b
 // ---- the app never speaks a command: built-in recipe lines
 const lines = DAL_TADKA.steps.flatMap((s) => [s.say || `${s.headline}. ${s.detail || ''}`, ...(s.beats || []).flatMap((b) => [b.say, b.sayHi])]);
 check('voice: no built-in line parses as a command', lines.every((l) => !parseCommand(l.replace(/\{\w+\}/g, '2'))));
+
+// ---- read-aloud voice choice (QA found the old picker took a 20 year old offline voice or an American one)
+const V = (name, lang, localService) => ({ name, lang, localService });
+const edge = [V('Microsoft Heera - English (India)', 'en-IN', true), V('Microsoft Neerja Online (Natural) - English (India)', 'en-IN', false), V('Microsoft David - English (United States)', 'en-US', true)];
+check('voice: a neural en-IN voice beats the old offline en-IN voice', chooseVoice(edge, 'en-IN').name.includes('Neerja'));
+const chrome = [V('Google US English', 'en-US', false), V('Google UK English Female', 'en-GB', false), V('Google हिन्दी', 'hi-IN', false)];
+check('voice: without en-IN, British English beats American', chooseVoice(chrome, 'en-IN').name === 'Google UK English Female');
+check('voice: Hindi gets the Hindi voice', chooseVoice(chrome, 'hi-IN').name === 'Google हिन्दी');
+check('voice: nothing matches, nothing is chosen', chooseVoice([V('Google Deutsch', 'de-DE', false)], 'en-IN') === null);
+check('voice: a saved choice wins when it fits the language', chooseVoice(edge, 'en-IN', 'Microsoft Heera - English (India)').name.includes('Heera'));
+
+// ---- gestures: the cases the QA run found
+const mk = (log) => new GestureInterpreter({ onProgress() {}, onEngage: () => log.push('engage'), onSwipe: (d) => log.push(`swipe ${d}`), onCancel: (r) => log.push(`cancel ${r}`), onThumb: () => log.push('thumb') });
+const run = (g, frames) => { for (const [t, name, score, x] of frames) g.feed(name ? { name, score, x } : null, t); };
+let lg = []; let g = mk(lg);
+run(g, [[0, 'Thumb_Up', 0.9, 0.5], [100, 'Thumb_Up', 0.9, 0.5], [200, 'Thumb_Up', 0.9, 0.5], [266, 'Thumb_Up', 0.5, 0.5], [333, 'Thumb_Up', 0.9, 0.5], [450, 'Thumb_Up', 0.9, 0.5]]);
+check('gesture: one weak frame does not restart the thumbs-up hold', lg.includes('thumb'), lg);
+lg = []; g = mk(lg);
+run(g, [[0, 'Open_Palm', 0.9, 0.3], [100, 'Open_Palm', 0.9, 0.3], [300, 'Open_Palm', 0.9, 0.3], [550, 'Open_Palm', 0.9, 0.3], [800, 'Open_Palm', 0.9, 0.3], [1000, 'Open_Palm', 0.9, 0.45]]);
+check('gesture: a 0.15 move after engaging is a swipe', lg.join() === 'engage,swipe left', lg);
+lg = []; g = mk(lg);
+run(g, [[0, 'Open_Palm', 0.9, 0.5], [66, 'None', 0.9, 0.5], [200, 'None', 0.9, 0.5], [400, 'None', 0.9, 0.5], [600, 'None', 0.9, 0.5]]);
+check('gesture: a hand that is not a palm cannot finish the arming ring', !lg.includes('engage'), lg);
+lg = []; g = mk(lg);
+run(g, [[0, 'Open_Palm', 0.9, 0.3], [300, 'Open_Palm', 0.9, 0.3], [550, 'Open_Palm', 0.9, 0.3], [700, null], [1000, null], [1200, 'Open_Palm', 0.9, 0.5]]);
+check('gesture: losing the hand to motion blur for 0.5 s still allows the swipe', lg.join() === 'engage,swipe left', lg);
+const two = { landmarks: [[{ x: 0.8 }], [{ x: 0.4 }]], gestures: [[{ categoryName: 'None', score: 0.9 }], [{ categoryName: 'Open_Palm', score: 0.7 }]] };
+check('gesture: with two hands, the one making a known gesture is used', pickHand(two).name === 'Open_Palm' && pickHand(two).x === 0.4);
+check('gesture: no hand gives null', pickHand({ landmarks: [], gestures: [] }) === null);
 
 const failed = results.filter((r) => !r.ok);
 console.log(results.map((r) => `${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.ok ? '' : `  [${r.detail}]`}`).join('\n'));

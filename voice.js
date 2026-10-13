@@ -110,11 +110,37 @@ export function spokeWithin(ms) {
   return isSpeaking() || clock() - endedAt < ms;
 }
 
+// Scores a speech voice for reading a recipe. Modern neural voices ("Natural", "Online") beat the
+// old offline Windows ones; the right region beats a near one; Indian English is read best by
+// en-IN, then British, whose vowels and stress are closer to it than American.
+export function voiceScore(v, lang) {
+  const l = (v.lang || '').replace('_', '-').toLowerCase();
+  const want = lang.toLowerCase();
+  if (!l.startsWith(want.slice(0, 2))) return -1;
+  let s = 0;
+  if (l === want) s += 100;
+  else if (want.startsWith('en')) s += { 'en-gb': 70, 'en-au': 55, 'en-us': 50 }[l] || 40;
+  else s += 40;
+  const n = v.name || '';
+  if (/natural|neural|online/i.test(n)) s += 60;
+  else if (/google/i.test(n)) s += 25;
+  else if (/^microsoft /i.test(n) && v.localService) s -= 20; // old offline desktop voices
+  return s;
+}
+
+export function chooseVoice(voices, lang, preferred) {
+  const pref = preferred && voices.find((v) => v.name === preferred && voiceScore(v, lang) >= 0);
+  if (pref) return pref;
+  let best = null; let bestScore = -1;
+  for (const v of voices) { const s = voiceScore(v, lang); if (s > bestScore) { best = v; bestScore = s; } }
+  return best;
+}
+
 function pickVoice(langPrefix) {
   const voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
-  return voices.find((v) => v.lang && v.lang.toLowerCase() === langPrefix.toLowerCase())
-    || voices.find((v) => v.lang && v.lang.toLowerCase().startsWith(langPrefix.slice(0, 2).toLowerCase()))
-    || null;
+  let preferred = null;
+  try { preferred = localStorage.getItem(`cookalong.voice.${langPrefix}`); } catch (_) { /* private mode */ }
+  return chooseVoice(voices, langPrefix, preferred);
 }
 
 // Speaks English text with an Indian English voice, or Devanagari text with a Hindi voice when one exists.
@@ -128,7 +154,7 @@ export function speak(text, { hindi } = {}) {
   }
   const u = new SpeechSynthesisUtterance(utterText);
   if (voice) { u.voice = voice; u.lang = voice.lang; } else { u.lang = 'en-IN'; }
-  u.rate = 1;
+  u.rate = 0.95;
   // Each utterance gets an id: cancelling the previous one fires its "end" late, and that must not
   // mark the new one as finished.
   const id = ++current;
