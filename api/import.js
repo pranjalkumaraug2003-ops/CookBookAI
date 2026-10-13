@@ -146,6 +146,11 @@ export default async function handler(req, res) {
   try {
     const body = await readJson(req);
     input = describeInput(body.input);
+    // Watching a video is the most expensive call this app makes: at most 4 per person per 10 minutes.
+    if (input.kind === 'youtube' && limited(ip, { bucket: 'video', limit: Number(process.env.VIDEO_LIMIT || 4) })) {
+      log('import', { status: 429, code: 'video_limit' }, 'warn');
+      return send(res, 429, { error: 'Too many video imports in a few minutes. Try again shortly, or paste the recipe text.', code: 'rate_limited' });
+    }
     // ?debug=1 returns the model attempts (model, format, Google's error message), never the key.
     const trace = /[?&]debug=1\b/.test(req.url || '') ? [] : undefined;
     const out = await importRecipe(body.input, { trace });

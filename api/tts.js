@@ -18,7 +18,8 @@ async function ttsModel(key) {
     const names = (j.models || [])
       .filter((m) => /tts/i.test(m.name) && (m.supportedGenerationMethods || ['generateContent']).includes('generateContent'))
       .map((m) => m.name.replace(/^models\//, ''));
-    discovered = names.find((n) => /flash/i.test(n)) || names[0] || null;
+    // Flash-class speech only, never a Pro model: it costs several times more for no gain in a kitchen.
+    discovered = names.find((n) => /flash/i.test(n) && !/pro/i.test(n)) || names.find((n) => !/pro/i.test(n)) || null;
   } catch (_) { /* fall through */ }
   return discovered || 'gemini-2.5-flash-preview-tts';
 }
