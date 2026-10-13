@@ -203,6 +203,8 @@ export function voiceScore(v, lang) {
   else if (want.startsWith('en')) s += { 'en-gb': 70, 'en-au': 55, 'en-us': 50 }[l] || 40;
   else s += 40;
   const n = v.name || '';
+  // The natural voice (Orus) is male, so a fallback voice should be male too.
+  if (/\b(male|prabhat|ravi|madhur|hemant|guy|ryan|david)\b/i.test(n) && !/female/i.test(n)) s += 15;
   if (/natural|neural|online/i.test(n)) s += 60;
   else if (/google/i.test(n)) s += 25;
   else if (/^microsoft /i.test(n) && v.localService) s -= 20; // old offline desktop voices

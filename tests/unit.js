@@ -123,6 +123,7 @@ const edge = [V('Microsoft Heera - English (India)', 'en-IN', true), V('Microsof
 check('voice: a neural en-IN voice beats the old offline en-IN voice', chooseVoice(edge, 'en-IN').name.includes('Neerja'));
 const chrome = [V('Google US English', 'en-US', false), V('Google UK English Female', 'en-GB', false), V('Google हिन्दी', 'hi-IN', false)];
 check('voice: without en-IN, British English beats American', chooseVoice(chrome, 'en-IN').name === 'Google UK English Female');
+check('voice: the fallback is male like Orus when a male voice exists', chooseVoice([...chrome, V('Google UK English Male', 'en-GB', false)], 'en-IN').name === 'Google UK English Male');
 check('voice: Hindi gets the Hindi voice', chooseVoice(chrome, 'hi-IN').name === 'Google हिन्दी');
 check('voice: nothing matches, nothing is chosen', chooseVoice([V('Google Deutsch', 'de-DE', false)], 'en-IN') === null);
 check('voice: a saved choice wins when it fits the language', chooseVoice(edge, 'en-IN', 'Microsoft Heera - English (India)').name.includes('Heera'));

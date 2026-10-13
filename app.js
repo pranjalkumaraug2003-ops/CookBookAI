@@ -349,6 +349,19 @@ function prefetchSteps(i) {
   }
 }
 
+// On the recipe page, before the cook starts, download every line's natural audio (two at a time), so
+// step 1 already speaks in the natural voice. Lines already cached cost nothing.
+async function prefetchRecipe() {
+  if (!S.flags.readAloud || S.flags.naturalVoice === false || !S.recipe) return;
+  const jobs = [];
+  for (const s of STEPS()) {
+    if (s.beats) { for (const b of s.beats) if (b.say) jobs.push([safeSpoken(b.say), { hindi: b.sayHi }]); }
+    else { const line = safeSpoken(spokenStep(s)); if (line) jobs.push([line, {}]); }
+  }
+  const worker = async () => { while (jobs.length) { const [t, o] = jobs.shift(); await prefetchTts(t, o); } };
+  await Promise.all([worker(), worker()]);
+}
+
 function next(via = { kind: 'key' }) {
   if (S.screen !== 'cook') return;
   if (S.alert) return;
@@ -933,6 +946,7 @@ function openRecipe(recipe) {
   S.notes = store.getNotes(recipe.id);
   S.screen = 'start';
   render();
+  prefetchRecipe();
 }
 
 stage.addEventListener('click', (e) => {
