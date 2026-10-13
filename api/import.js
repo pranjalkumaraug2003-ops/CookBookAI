@@ -17,13 +17,14 @@ const YT = /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/)|youtu
 // A small per-address limit. Serverless instances don't share memory, so this is a speed bump, not a wall;
 // the real cap on cost is the API key's own quota.
 const hits = new Map();
-function limited(ip) {
+export function limited(ip, { limit = Number(process.env.IMPORT_LIMIT || 12), bucket = 'import' } = {}) {
+  const key = `${bucket}:${ip}`;
   const t = Date.now();
-  const list = (hits.get(ip) || []).filter((x) => t - x < 10 * 60 * 1000);
+  const list = (hits.get(key) || []).filter((x) => t - x < 10 * 60 * 1000);
   list.push(t);
-  hits.set(ip, list);
+  hits.set(key, list);
   if (hits.size > 5000) hits.clear();
-  return list.length > Number(process.env.IMPORT_LIMIT || 12);
+  return list.length > limit;
 }
 
 async function readJson(req) {
@@ -42,12 +43,28 @@ function send(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+async function secondOpinion(url) {
+  try {
+    const r = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(5000) });
+    const j = await r.json();
+    if (j && j.title) return { title: j.title, author: j.author_name || '' };
+    return j && j.error ? { missing: true } : null; // null means we could not tell
+  } catch (_) { return null; }
+}
+
 async function youtubeMeta(url) {
   // oEmbed tells us the title and channel, and fails for private or removed videos.
   try {
     const r = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(6000) });
-    if (r.status === 401 || r.status === 403) throw new UserError('That video is private or does not allow embedding.', 'video_private');
-    if (r.status === 404 || r.status === 400) throw new UserError('That video could not be found.', 'video_missing', 404);
+    // Cloud addresses are sometimes refused by YouTube even for public videos, so only trust a refusal
+    // when a second service agrees. Otherwise carry on and let the model decide.
+    if (r.status === 401 || r.status === 403 || r.status === 404 || r.status === 400) {
+      const second = await secondOpinion(url);
+      if (!second) return {}; // could not tell: let the model try the video
+      if (!second.missing) return second;
+      if (r.status === 404 || r.status === 400) throw new UserError('That video could not be found.', 'video_missing', 404);
+      throw new UserError('That video is private or does not allow embedding.', 'video_private');
+    }
     if (!r.ok) return {};
     const j = await r.json();
     return { title: j.title || '', author: j.author_name || '' };

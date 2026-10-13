@@ -17,6 +17,24 @@ export default async function mock(req, res) {
   const text = parts.map((p) => p.text || '').join('\n');
   res.setHeader('content-type', 'application/json');
   if (!req.headers['x-goog-api-key']) { res.statusCode = 403; return res.end(JSON.stringify({ error: { message: 'no key', status: 'PERMISSION_DENIED' } })); }
+  if (body.generationConfig?.responseModalities?.includes('AUDIO')) {
+    if (/MODEL_FAILS/.test(text)) { res.statusCode = 503; return res.end(JSON.stringify({ error: { message: 'overloaded', status: 'UNAVAILABLE' } })); }
+    const silence = Buffer.alloc(14400).toString('base64');
+    return res.end(JSON.stringify({
+      candidates: [{
+        content: {
+          role: 'model',
+          parts: [{
+            inlineData: {
+              mimeType: 'audio/pcm;rate=24000',
+              data: silence,
+            },
+          }],
+        },
+        finishReason: 'STOP',
+      }],
+    }));
+  }
   // SCHEMA_REJECTED: behave like a model that rejects responseSchema but accepts responseJsonSchema.
   if (/SCHEMA_REJECTED/.test(text) && body.generationConfig?.responseSchema) { res.statusCode = 400; return res.end(JSON.stringify({ error: { code: 400, message: 'Request contains an invalid argument.', status: 'INVALID_ARGUMENT' } })); }
   if (!body.generationConfig?.responseSchema && !body.generationConfig?.responseJsonSchema) { res.statusCode = 400; return res.end(JSON.stringify({ error: { message: 'test expects a schema' } })); }

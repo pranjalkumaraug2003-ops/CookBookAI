@@ -1,7 +1,7 @@
 // Cook-Along Mode: state, timers, inputs and rendering for the cooking screens.
 // The library, import and review screens live in library.js; the recipe format in recipe.js.
 import { DAL_TADKA, LANES, VESSEL_NAMES, fill, fillSafe, fmtQty, scaledQty, findIngredientByWord, potOf, laneOf, idsInStep, hasWhistles, escapeHtml as esc } from './recipe.js';
-import { createRecognizer, parseCommand, speak, stopSpeaking, isSpeaking, spokeWithin, VOCABULARY } from './voice.js';
+import { createRecognizer, parseCommand, isCoreCommand, speak, stopSpeaking, isSpeaking, spokeWithin, prefetchTts, VOCABULARY } from './voice.js';
 import { startCamera, loadVision, runVisionLoop, GestureInterpreter, NearDetector, startMic, chime, unlockAudio, keepScreenOn } from './sensing.js';
 import { I, svg, vesselIcon } from './icons.js';
 import * as store from './store.js';
@@ -19,7 +19,7 @@ const S = {
   screen: 'library',
   recipe: DAL_TADKA,
   servings: 4,
-  flags: { voice: true, camera: true, mic: true, readAloud: true, lang: 'en-IN', video: true },
+  flags: { voice: true, camera: true, mic: true, readAloud: true, naturalVoice: true, lang: 'en-IN', video: true },
   step: 0,
   beat: 0,
   beatRemaining: null,
@@ -58,7 +58,7 @@ const S = {
 };
 // Sensing thresholds. These are starting guesses: tune them in the demo panel with your own cooker, kitchen and camera.
 // Tuned values are saved on this device, so the next cook starts with them.
-const CFG = { loudDb: -38, whistleDb: -32, whistleRatio: 0.5, whistleLowHz: 2000, whistleHighHz: 6000, nearEnter: 0.3 };
+const CFG = { loudDb: -38, whistleDb: -32, whistleRatio: 0.58, whistleLowHz: 1700, whistleHighHz: 6000, nearEnter: 0.22 };
 
 const R = () => S.recipe;
 const STEPS = () => R().steps;
@@ -215,7 +215,7 @@ export function safeSpoken(text) {
 function say(text, hindi) {
   if (!S.flags.readAloud) return;
   const line = safeSpoken(text);
-  if (line) speak(line, { hindi });
+  if (line) speak(line, { hindi, naturalVoice: S.flags.naturalVoice });
 }
 
 function notify({ pot, text, sub, speakIt, spoken }) {
@@ -313,6 +313,7 @@ function goToStep(i, { force = false, via = { kind: 'key' }, quiet = false } = {
   else if (!videoOn()) speakStep();
   videoToStep(true);
   headsUp(i);
+  prefetchSteps(i);
   log(`step ${i + 1}`);
   persistNow();
 }
@@ -330,6 +331,23 @@ function spokenStep(st) {
   return spokenUnits(st.say ? Tplain(st.say) : `${Tplain(st.headline)}. ${st.detail ? Tplain(st.detail) : ''}`);
 }
 function speakStep() { say(spokenStep(step())); }
+
+function prefetchSteps(i) {
+  if (!S.flags.readAloud || S.flags.naturalVoice === false) return;
+  const steps = STEPS();
+  for (const idx of [i, i + 1]) {
+    const s = steps[idx];
+    if (!s) continue;
+    if (s.beats) {
+      for (const b of s.beats) {
+        if (b.say) prefetchTts(safeSpoken(b.say), { hindi: b.sayHi });
+      }
+    } else {
+      const line = safeSpoken(spokenStep(s));
+      if (line) prefetchTts(line);
+    }
+  }
+}
 
 function next(via = { kind: 'key' }) {
   if (S.screen !== 'cook') return;
@@ -627,7 +645,7 @@ function applyScale(via) {
 
 // Commands that may interrupt the app while it is talking. Everything else waits, so it can't hear itself.
 const BARGE_IN = ['pause', 'stop', 'ack', 'undo'];
-function onTranscript(alts) {
+function onTranscript(alts, confidences = []) {
   const text = (alts[0] || '').trim();
   if (!text) return;
   log(`heard “${text}”`);
@@ -640,12 +658,17 @@ function onTranscript(alts) {
     if (!cmd) { saveNote(text); render(); }
     return;
   }
-  for (const a of alts) {
+  for (let idx = 0; idx < alts.length; idx++) {
+    const a = alts[idx];
+    const conf = typeof confidences[idx] === 'number' ? confidences[idx] : 1;
     const cmd = parseCommand(a);
     if (!cmd) continue;
     if (ownVoice && !BARGE_IN.includes(cmd.intent)) { log(`ignored while speaking: “${a}”`); return; }
     if (videoPlaying() && !['pause', 'stop'].includes(cmd.intent)) { log(`ignored while the video plays: “${a}”`); return; }
-    if (isLoud() && !['pause', 'stop'].includes(cmd.intent)) { log('ignored: too loud'); return; }
+    const loudOk = ['pause', 'stop'].includes(cmd.intent) || (cmd.intent === 'ack' && S.alert);
+    const isCore = isCoreCommand(a);
+    const loudAccepted = loudOk || conf >= 0.7 || isCore;
+    if (isLoud() && !loudAccepted) { log(`ignored: too loud (conf ${Number(conf.toFixed(2))})`); return; }
     handleIntent(cmd, { kind: 'voice', word: cmd.word, heard: cmd.heard });
     render();
     return;
@@ -743,7 +766,7 @@ const gestures = new GestureInterpreter({
 });
 
 const nearDetector = new NearDetector((near) => { S.nearAuto = near; log(`camera: ${near ? 'near' : 'far'}`); }, {
-  thresholds: () => ({ enter: CFG.nearEnter, exit: Math.max(0.05, CFG.nearEnter - 0.08) }),
+  thresholds: () => ({ enter: CFG.nearEnter, exit: Math.max(0.05, CFG.nearEnter - 0.06) }),
 });
 nearDetector.onPresence = (present) => {
   if (S.screen !== 'cook') return;
@@ -1184,12 +1207,12 @@ function timerChip(slot) {
 }
 
 function backHold() {
-  return `<button class="hold back" data-hold="back" aria-label="Back, hold to confirm">${I.left(56, '#171B20')}<div class="t">Back</div><div class="s">hold</div></button>`;
+  return `<button class="hold back" data-hold="back" aria-label="Back hold, hold half a second to confirm">${I.left(56, '#171B20')}<div class="t">Back</div><div class="s">hold</div></button>`;
 }
 
 function nextHold() {
   const nextLabel = S.step < STEPS().length - 1 ? T(STEPS()[S.step + 1].headline) : 'Finish';
-  return `<button class="hold next" data-hold="next" aria-label="Next, hold to confirm">
+  return `<button class="hold next" data-hold="next" aria-label="Next hold, hold half a second to confirm">
     <div class="ring"><svg class="r" width="96" height="96" viewBox="0 0 96 96"><circle cx="48" cy="48" r="42" fill="none" stroke="#3A3F46" stroke-width="8"/><circle data-ring cx="48" cy="48" r="42" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-dasharray="264 264" stroke-dashoffset="264" transform="rotate(-90 48 48)"/></svg>${I.right(48, '#fff')}</div>
     <div class="t">Next</div><div class="s">${nextLabel}<br>hold ½ s</div>
   </button>`;
@@ -1441,6 +1464,7 @@ function startView() {
           <label class="toggle"><input type="checkbox" data-flag="camera" ${S.flags.camera ? 'checked' : ''}>Gestures</label>
           <label class="toggle"><input type="checkbox" data-flag="mic" ${S.flags.mic ? 'checked' : ''}>Whistle listening</label>
           <label class="toggle"><input type="checkbox" data-flag="readAloud" ${S.flags.readAloud ? 'checked' : ''}>Read aloud</label>
+          <label class="toggle"><input type="checkbox" data-flag="naturalVoice" ${S.flags.naturalVoice !== false ? 'checked' : ''}>Natural voice (uses internet)</label>
           ${videoToggle}
         </div>
         <button type="button" class="start-cta" data-tap="start"><div><div class="t">Start Cook-Along</div><div class="s">Hands-free from here</div></div>${I.right(40, '#fff')}</button>
@@ -1658,6 +1682,7 @@ function renderDemo() {
     <div class="row">${STEPS().map((_, i) => `<button data-jump="${i}">${i + 1}</button>`).join('')}</div>
     <label>Voice language</label>
     <div class="row"><button data-lang="en-IN" class="${S.flags.lang === 'en-IN' ? 'on' : ''}">English (India)</button><button data-lang="hi-IN" class="${S.flags.lang === 'hi-IN' ? 'on' : ''}">Hindi (India)</button></div>
+    <label class="toggle" style="margin-top:6px;display:flex;align-items:center;gap:8px"><input type="checkbox" data-flag="naturalVoice" ${S.flags.naturalVoice !== false ? 'checked' : ''}>Natural voice (uses internet)</label>
     <label>Mic level · noise floor <span id="dlvl"></span></label>
     <div class="meter"><i id="dmeter" style="width:0%"></i></div>
     <label>Too loud above (dBFS floor): <span id="dloudv">${CFG.loudDb}</span></label>
@@ -1712,6 +1737,12 @@ demoEl.addEventListener('click', (e) => {
   if (b.dataset.speed) { S.speed = Number(b.dataset.speed); renderDemo(); }
   if (b.dataset.jump) { const i = Number(b.dataset.jump); S.entered[i] = false; if (S.screen !== 'cook') startCooking(); goToStep(i, { force: true, quiet: true }); render(); }
   if (b.dataset.lang) { S.flags.lang = b.dataset.lang; saveSettings(); if (S.screen === 'cook') startVoice(); renderDemo(); }
+});
+demoEl.addEventListener('change', (e) => {
+  const el = e.target.closest('[data-flag]');
+  if (!el) return;
+  S.flags[el.dataset.flag] = el.checked;
+  saveSettings();
 });
 demoEl.addEventListener('input', (e) => {
   const k = e.target.dataset.cfg;

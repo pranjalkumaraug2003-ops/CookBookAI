@@ -9,8 +9,10 @@ import { normalizeRecipe, DAL_TADKA, fmtQty, scaledQty } from '../recipe.js';
 import { extractRecipe, pageText, isoMinutes, assertPublicUrl, recipeToText } from '../api/_lib/page.js';
 import { draftToRecipe } from '../api/_lib/convert.js';
 import { toOpenApi, DRAFT_SCHEMA } from '../api/_lib/gemini.js';
-import { parseCommand } from '../voice.js';
+import { parseCommand, chooseVoice, isCoreCommand, createRecognizer } from '../voice.js';
+import { GestureInterpreter, pickHand } from '../sensing.js';
 import { describeInput } from '../api/_lib/log.js';
+import { pcmToWav } from '../api/_lib/wav.js';
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const results = [];
@@ -114,6 +116,95 @@ check('log: a YouTube link is logged as a video', describeInput('https://youtu.b
 // ---- the app never speaks a command: built-in recipe lines
 const lines = DAL_TADKA.steps.flatMap((s) => [s.say || `${s.headline}. ${s.detail || ''}`, ...(s.beats || []).flatMap((b) => [b.say, b.sayHi])]);
 check('voice: no built-in line parses as a command', lines.every((l) => !parseCommand(l.replace(/\{\w+\}/g, '2'))));
+
+// ---- read-aloud voice choice (QA found the old picker took a 20 year old offline voice or an American one)
+const V = (name, lang, localService) => ({ name, lang, localService });
+const edge = [V('Microsoft Heera - English (India)', 'en-IN', true), V('Microsoft Neerja Online (Natural) - English (India)', 'en-IN', false), V('Microsoft David - English (United States)', 'en-US', true)];
+check('voice: a neural en-IN voice beats the old offline en-IN voice', chooseVoice(edge, 'en-IN').name.includes('Neerja'));
+const chrome = [V('Google US English', 'en-US', false), V('Google UK English Female', 'en-GB', false), V('Google हिन्दी', 'hi-IN', false)];
+check('voice: without en-IN, British English beats American', chooseVoice(chrome, 'en-IN').name === 'Google UK English Female');
+check('voice: Hindi gets the Hindi voice', chooseVoice(chrome, 'hi-IN').name === 'Google हिन्दी');
+check('voice: nothing matches, nothing is chosen', chooseVoice([V('Google Deutsch', 'de-DE', false)], 'en-IN') === null);
+check('voice: a saved choice wins when it fits the language', chooseVoice(edge, 'en-IN', 'Microsoft Heera - English (India)').name.includes('Heera'));
+
+// ---- gestures: the cases the QA run found
+const mk = (log) => new GestureInterpreter({ onProgress() {}, onEngage: () => log.push('engage'), onSwipe: (d) => log.push(`swipe ${d}`), onCancel: (r) => log.push(`cancel ${r}`), onThumb: () => log.push('thumb') });
+const run = (g, frames) => { for (const [t, name, score, x] of frames) g.feed(name ? { name, score, x } : null, t); };
+let lg = []; let g = mk(lg);
+run(g, [[0, 'Thumb_Up', 0.9, 0.5], [100, 'Thumb_Up', 0.9, 0.5], [200, 'Thumb_Up', 0.9, 0.5], [266, 'Thumb_Up', 0.5, 0.5], [333, 'Thumb_Up', 0.9, 0.5], [450, 'Thumb_Up', 0.9, 0.5]]);
+check('gesture: one weak frame does not restart the thumbs-up hold', lg.includes('thumb'), lg);
+lg = []; g = mk(lg);
+run(g, [[0, 'Open_Palm', 0.9, 0.3], [100, 'Open_Palm', 0.9, 0.3], [300, 'Open_Palm', 0.9, 0.3], [550, 'Open_Palm', 0.9, 0.3], [800, 'Open_Palm', 0.9, 0.3], [1000, 'Open_Palm', 0.9, 0.45]]);
+check('gesture: a 0.15 move after engaging is a swipe', lg.join() === 'engage,swipe left', lg);
+lg = []; g = mk(lg);
+run(g, [[0, 'Open_Palm', 0.9, 0.5], [66, 'None', 0.9, 0.5], [200, 'None', 0.9, 0.5], [400, 'None', 0.9, 0.5], [600, 'None', 0.9, 0.5]]);
+check('gesture: a hand that is not a palm cannot finish the arming ring', !lg.includes('engage'), lg);
+lg = []; g = mk(lg);
+run(g, [[0, 'Open_Palm', 0.9, 0.3], [300, 'Open_Palm', 0.9, 0.3], [550, 'Open_Palm', 0.9, 0.3], [700, null], [1000, null], [1200, 'Open_Palm', 0.9, 0.5]]);
+check('gesture: losing the hand to motion blur for 0.5 s still allows the swipe', lg.join() === 'engage,swipe left', lg);
+const two = { landmarks: [[{ x: 0.8 }], [{ x: 0.4 }]], gestures: [[{ categoryName: 'None', score: 0.9 }], [{ categoryName: 'Open_Palm', score: 0.7 }]] };
+check('gesture: with two hands, the one making a known gesture is used', pickHand(two).name === 'Open_Palm' && pickHand(two).x === 0.4);
+check('gesture: no hand gives null', pickHand({ landmarks: [], gestures: [] }) === null);
+
+// ---- WAV header writer
+const rawPcm = Buffer.alloc(480);
+const wav = pcmToWav(rawPcm);
+check('wav: starts with RIFF', wav.subarray(0, 4).toString() === 'RIFF');
+check('wav: chunk size is 36 + dataSize', wav.readUInt32LE(4) === 36 + rawPcm.length);
+check('wav: format is WAVE and fmt ', wav.subarray(8, 12).toString() === 'WAVE' && wav.subarray(12, 16).toString() === 'fmt ');
+check('wav: PCM format, mono, 24kHz, 16-bit', wav.readUInt16LE(20) === 1 && wav.readUInt16LE(22) === 1 && wav.readUInt32LE(24) === 24000 && wav.readUInt16LE(34) === 16);
+check('wav: data subchunk matches length', wav.subarray(36, 40).toString() === 'data' && wav.readUInt32LE(40) === rawPcm.length);
+check('wav: total length is 44 + dataSize', wav.length === 44 + rawPcm.length);
+
+// ---- mishearings and sentence chatter checks
+const mishearings = {
+  'age': 'next', 'aagey': 'next', 'aagay': 'next', 'aa ge': 'next', 'agle': 'next', 'agla': 'next', 'aage badho': 'next',
+  'piche': 'back', 'peechay': 'back', 'pichhe': 'back', 'peeche jao': 'back',
+  'ho gya': 'ack', 'hogaya': 'ack', 'ho gayi': 'ack',
+  'fir se': 'repeat', 'phirse': 'repeat',
+  'rukho': 'pause', 'roko': 'pause',
+  'galt': 'undo',
+};
+for (const [phrase, intent] of Object.entries(mishearings)) {
+  check(`mishearing: "${phrase}" -> ${intent}`, (parseCommand(phrase) || {}).intent === intent);
+}
+
+// Sentences check (chatter tolerance & length limit on mishearings)
+check('sentence: "what age is he" is ignored', parseCommand('what age is he') === null);
+check('sentence: "go back home" parses as back', (parseCommand('go back home') || {}).intent === 'back');
+check('sentence: "aage ka plan kya hai bhai" parses as next', (parseCommand('aage ka plan kya hai bhai') || {}).intent === 'next');
+
+// Core command checks
+check('core: aage is a core command', isCoreCommand('aage'));
+check('core: namak kitna is not a core command', !isCoreCommand('namak kitna'));
+
+// ---- interim deduplication
+let interimDispatched = 0;
+globalThis.window = globalThis.window || {};
+globalThis.window.SpeechRecognition = class MockSR {
+  constructor() { this.interimResults = false; }
+  start() {}
+  stop() {}
+};
+const recTest = createRecognizer({
+  onAlternatives: () => { interimDispatched++; },
+  onState: () => {},
+});
+const mockEventInterim = {
+  resultIndex: 0,
+  results: [
+    Object.assign([{ transcript: 'aage', confidence: 0.85 }], { isFinal: false }),
+  ],
+};
+const mockEventFinal = {
+  resultIndex: 0,
+  results: [
+    Object.assign([{ transcript: 'aage', confidence: 0.95 }], { isFinal: true }),
+  ],
+};
+recTest.rec.onresult(mockEventInterim);
+recTest.rec.onresult(mockEventFinal);
+check('interim: fires once, final with same intent suppressed', interimDispatched === 1, `dispatched ${interimDispatched} times`);
 
 const failed = results.filter((r) => !r.ok);
 console.log(results.map((r) => `${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.ok ? '' : `  [${r.detail}]`}`).join('\n'));

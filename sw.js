@@ -1,7 +1,7 @@
 // Offline support. After the first visit the app opens without a network: the app itself, its fonts and the
 // on-device vision models are kept in the browser's cache. Recipe import and YouTube need the network and are
 // never cached.
-const VERSION = 'cookalong-v4';
+const VERSION = 'cookalong-v5';
 const SHELL = [
   './', 'index.html', 'privacy.html', 'styles.css', 'app.js', 'recipe.js', 'store.js', 'library.js', 'parse-text.js', 'icons.js', 'video.js', 'tour.js', 'voice.js', 'sensing.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png',
@@ -24,7 +24,7 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.pathname.includes('/api/')) return; // imports always go to the network
+  if (url.pathname.includes('/api/')) return; // API requests (imports, tts) never cached by service worker
 
   if (PINNED.some((re) => re.test(req.url))) {
     e.respondWith(caches.match(req).then((hit) => hit || fetch(req).then((res) => {

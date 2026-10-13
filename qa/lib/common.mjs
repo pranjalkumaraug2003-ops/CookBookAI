@@ -84,7 +84,7 @@ const PLAIN_REMOVE = [
 // browser: 'chrome' (installed Google Chrome), 'msedge' (installed Edge) or 'chromium' (Playwright's own).
 // fakeVideo / fakeAudio: paths to a .y4m / .wav fed in place of the real camera / microphone.
 export async function launch({ browser = 'chrome', headed = true, plain = true, fakeVideo, fakeAudio, fakeDevices = false, viewport = null, profile = 'default', extraArgs = [] } = {}) {
-  const args = ['--autoplay-policy=no-user-gesture-required', ...extraArgs];
+  const args = ['--autoplay-policy=no-user-gesture-required', '--start-maximized', ...extraArgs];
   const useFake = fakeDevices || fakeVideo || fakeAudio;
   if (useFake) {
     args.push('--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream');
@@ -119,6 +119,7 @@ export async function launch({ browser = 'chrome', headed = true, plain = true, 
   page.on('console', (m) => { if (consoleLines.length < 400) consoleLines.push(`${m.type()}: ${m.text()}`.slice(0, 500)); });
   page.on('pageerror', (e) => { consoleLines.push(`pageerror: ${e.message}`.slice(0, 500)); });
   await bridge(page);
+  await page.bringToFront().catch(() => {});
   return { context, page, browser: used, version, consoleLines, close: () => context.close() };
 }
 

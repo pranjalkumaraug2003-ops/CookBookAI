@@ -29,10 +29,23 @@ async function createWithFallback(Task, fileset, modelAssetPath, extra) {
 export async function loadVision() {
   const vision = await import(`${MP_BASE}/vision_bundle.mjs`);
   const fileset = await vision.FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
-  const gestures = await createWithFallback(vision.GestureRecognizer, fileset, GESTURE_MODEL, { numHands: 1 });
+  const gestures = await createWithFallback(vision.GestureRecognizer, fileset, GESTURE_MODEL, { numHands: 2 });
   let faces = null;
   try { faces = await createWithFallback(vision.FaceDetector, fileset, FACE_MODEL, {}); } catch (_) { faces = null; }
   return { gestures, faces };
+}
+
+// With two hands in view (or a false hand behind the cook), use the one making a gesture the app knows.
+export function pickHand(res) {
+  const hands = (res && res.landmarks) || [];
+  let best = null;
+  for (let i = 0; i < hands.length; i++) {
+    const top = res.gestures && res.gestures[i] && res.gestures[i][0];
+    const h = { name: top ? top.categoryName : 'None', score: top ? top.score : 0, x: hands[i][0].x };
+    const known = h.name === 'Open_Palm' || h.name === 'Thumb_Up';
+    if (!best || (known && !best.known) || (known === best.known && h.score > best.hand.score)) best = { hand: h, known };
+  }
+  return best ? best.hand : null;
 }
 
 // Calls onHand({name, score, x} | null) about 15 times a second and onFace(widthRatio) about twice a second.
@@ -40,17 +53,18 @@ export function runVisionLoop(videoEl, models, { onHand, onFace }) {
   let running = true;
   let lastHand = 0;
   let lastFace = 0;
+  let lastVT = -1;
   function frame() {
     if (!running) return;
     const now = performance.now();
     if (videoEl.readyState >= 2 && videoEl.videoWidth > 0) {
-      if (now - lastHand > 66) {
+      // A webcam often delivers 10 to 15 fps: skip a frame the model has already seen.
+      if (now - lastHand > 66 && videoEl.currentTime !== lastVT) {
         lastHand = now;
+        lastVT = videoEl.currentTime;
         try {
           const res = models.gestures.recognizeForVideo(videoEl, now);
-          const top = res.gestures && res.gestures[0] && res.gestures[0][0];
-          const lm = res.landmarks && res.landmarks[0];
-          onHand(lm ? { name: top ? top.categoryName : 'None', score: top ? top.score : 0, x: lm[0].x } : null, now);
+          onHand(pickHand(res), now);
         } catch (_) { /* skip frame */ }
       }
       if (models.faces && now - lastFace > 450) {
@@ -75,13 +89,15 @@ export class GestureInterpreter {
     this.h = handlers;
     this.ARM_MS = opts.armMs || 500;
     this.WINDOW_MS = opts.windowMs || 3000;
-    this.SWIPE_DX = opts.swipeDx || 0.12;
+    this.SWIPE_DX = opts.swipeDx || 0.1;
     this.state = 'idle';
     this.t0 = 0;
     this.lastSeen = 0;
     this.baseX = 0;
     this.cooldownUntil = 0;
     this.thumbSince = null;
+    this.lastThumb = 0;
+    this.lastPalm = 0;
   }
 
   reset() { this.state = 'idle'; this.h.onProgress(null); }
@@ -91,6 +107,8 @@ export class GestureInterpreter {
     const palm = hand && hand.name === 'Open_Palm' && hand.score > 0.55;
     const thumb = hand && hand.name === 'Thumb_Up' && hand.score > 0.6;
     if (hand) this.lastSeen = now;
+    if (palm) this.lastPalm = now;
+    if (thumb) this.lastThumb = now;
 
     if (this.state === 'idle') {
       if (thumb) {
@@ -98,13 +116,15 @@ export class GestureInterpreter {
         if (now - this.thumbSince > 400) { this.thumbSince = null; this.cooldownUntil = now + 1500; this.h.onThumb(); }
         return;
       }
+      // One weak frame must not restart the hold: forgive a gap of up to 250 ms.
+      if (this.thumbSince != null && now - this.lastThumb < 250) return;
       this.thumbSince = null;
       if (palm) { this.state = 'arming'; this.t0 = now; this.baseX = hand.x; this.h.onProgress(0); }
       return;
     }
 
     if (this.state === 'arming') {
-      if (!palm && now - this.lastSeen > 200) { this.reset(); return; }
+      if (!palm && now - this.lastPalm > 250) { this.reset(); return; }
       if (!palm && hand && hand.name !== 'Open_Palm' && hand.name !== 'None') { this.reset(); return; }
       const p = Math.min(1, (now - this.t0) / this.ARM_MS);
       this.h.onProgress(p);
@@ -116,7 +136,7 @@ export class GestureInterpreter {
     if (this.state === 'engaged') {
       if (now - this.t0 > this.WINDOW_MS) { this.state = 'idle'; this.h.onCancel('timeout'); return; }
       if (!hand) {
-        if (now - this.lastSeen > 450) { this.state = 'idle'; this.h.onCancel('dropped'); }
+        if (now - this.lastSeen > 700) { this.state = 'idle'; this.h.onCancel('dropped'); }
         return;
       }
       const dx = hand.x - this.baseX;
@@ -131,9 +151,9 @@ export class GestureInterpreter {
 
 // Near when the face fills more of the frame; hysteresis stops flicker.
 // The ratio depends on the camera's field of view, so thresholds come from a getter the demo panel can tune.
-// With a typical 65 degree webcam, 0.30 is about 40 cm away; an ultra-wide tablet camera needs a lower value.
+// On a laptop webcam (measured), the face is about 0.17 of the frame at 2 ft, so 0.22 is roughly arm's reach; a wide tablet camera needs a lower value.
 export class NearDetector {
-  constructor(onChange, { thresholds = () => ({ enter: 0.3, exit: 0.22 }) } = {}) {
+  constructor(onChange, { thresholds = () => ({ enter: 0.22, exit: 0.16 }) } = {}) {
     this.onChange = onChange;
     this.thresholds = thresholds;
     this.near = false;

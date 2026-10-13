@@ -38,7 +38,7 @@ const FAKE_YT = () => {
   const newPage = async (ctx, { fakeYt = true } = {}) => {
     const page = await ctx.newPage();
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
-    page.on('console', (m) => { if (m.type() === 'error' && !/ERR_|net::|Failed to load resource|youtube|mediapipe/i.test(m.text())) errors.push('console: ' + m.text()); });
+    page.on('console', (m) => { if (m.type() === 'error' && !/ERR_|net::|Failed to load resource|youtube|mediapipe|tensorflow|tflite|xnnpack|^INFO:/i.test(m.text())) errors.push('console: ' + m.text()); });
     await page.addInitScript(() => { window.__spoken = []; if (window.speechSynthesis) { const o = window.speechSynthesis.speak.bind(window.speechSynthesis); window.speechSynthesis.speak = (u) => { window.__spoken.push(u.text); try { o(u); } catch (_) { /* ignore */ } }; } });
     if (fakeYt) await page.addInitScript(FAKE_YT);
     return page;
@@ -279,7 +279,69 @@ const FAKE_YT = () => {
   await page.waitForFunction(() => document.getElementById('wipeMsg').textContent.length > 0);
   const left = await C(() => ({ ours: Object.keys(localStorage).filter((k) => k.startsWith('cookalong.')), other: localStorage.getItem('other.app'), msg: document.getElementById('wipeMsg').textContent }));
   check('privacy: clearing removes only Cook-Along\'s data', left.ours.length === 0 && left.other === 'keep' && /cleared/.test(left.msg), left);
-  await shot('p16-privacy');
+  // ---- natural voice TTS with fallback
+  page = await newPage(ctx);
+  await page.goto(base + '/index.html');
+  await page.waitForTimeout(500);
+  await C(() => {
+    const c = window.__cookAlong;
+    c.startCooking();
+    c.S.flags.readAloud = true;
+    c.S.flags.naturalVoice = true;
+    c.render();
+  });
+
+  // 1. Natural voice plays and speaking is true during playback
+  await C(async () => {
+    const v = await import('/voice.js');
+    window.__ttsPromise = v.speak('Rinse the rice thoroughly');
+  });
+  await page.waitForTimeout(50);
+  const speakingDuring = await C(async () => {
+    const v = await import('/voice.js');
+    return v.isSpeaking();
+  });
+  check('tts: natural voice plays and isSpeaking is true during playback', speakingDuring);
+
+  // 2. "aage" said during playback is ignored
+  await C(() => window.__cookAlong.onTranscript(['aage']));
+  const stepDuring = await C(() => window.__cookAlong.S.step);
+  check('tts: aage said during playback is ignored', stepDuring === 0);
+  await C(() => window.__ttsPromise);
+
+  // 3. API returns 500, then fallback speaks
+  await page.route('**/api/tts*', (route) => route.fulfill({ status: 500, body: '{"error":"server error"}' }));
+  await C(async () => {
+    const v = await import('/voice.js');
+    v.stopSpeaking();
+    await v.speak('Boil the water in cooker');
+  });
+  const fallback500 = await C(() => (window.__spoken || []).includes('Boil the water in cooker'));
+  check('tts: API 500 error falls back to speechSynthesis', fallback500);
+  await page.unroute('**/api/tts*');
+
+  // 4. Offline, then fallback speaks
+  await ctx.setOffline(true);
+  await C(async () => {
+    const v = await import('/voice.js');
+    v.stopSpeaking();
+    await v.speak('Chop onions finely');
+  });
+  const fallbackOffline = await C(() => (window.__spoken || []).includes('Chop onions finely'));
+  check('tts: offline falls back to speechSynthesis', fallbackOffline);
+  await ctx.setOffline(false);
+
+  // 5. Toggle off means no /api/tts request
+  let ttsRequestsCount = 0;
+  page.on('request', (req) => { if (req.url().includes('/api/tts')) ttsRequestsCount++; });
+  await C(async () => {
+    window.__cookAlong.S.flags.naturalVoice = false;
+    const v = await import('/voice.js');
+    v.stopSpeaking();
+    await v.speak('Fry cumin seeds until fragrant');
+  });
+  const fallbackToggleOff = await C(() => (window.__spoken || []).includes('Fry cumin seeds until fragrant'));
+  check('tts: toggle off means no /api/tts request and fallback speaks', fallbackToggleOff && ttsRequestsCount === 0, `requests: ${ttsRequestsCount}`);
 
   check('no page errors', errors.length === 0, errors.join(' | '));
   const failed = results.filter((r) => !r.ok);
