@@ -20,6 +20,7 @@ export const I = {
   warn: (s = 22, c) => svg(s, '<path d="M12 3.5L2.5 20h19z"/><path d="M12 10v4.5"/><path d="M12 17.5v.01"/>', c),
   knife: (s = 20, c) => svg(s, '<path d="M3 17h18"/><path d="M5 17l9-11 3 3-7 8"/>', c),
   plate: (s = 20, c) => svg(s, '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/>', c),
+  x: (s = 22, c, w = 2.6) => svg(s, '<path d="M6 6l12 12"/><path d="M18 6L6 18"/>', c, w),
   plus: (s = 24, c, w = 2.6) => svg(s, '<path d="M5 12h14"/><path d="M12 5v14"/>', c, w),
   minus: (s = 24, c, w = 2.6) => svg(s, '<path d="M5 12h14"/>', c, w),
   trash: (s = 20, c) => svg(s, '<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/>', c, 2),

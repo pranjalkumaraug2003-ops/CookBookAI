@@ -24,7 +24,7 @@ export function createTour(api) {
     S.camState = 'demo';
     S.nearOverride = near;
     S.loudOverride = null;
-    S.engaged = false;
+    S.holdGesture = null;
     for (let k = 1; k <= step; k++) {
       api.goToStep(k, { force: true, quiet: true });
       // Past the cooker step, the dal has whistled and is cooling, as it would be in a real cook.
@@ -77,10 +77,10 @@ export function createTour(api) {
       run() { cookAt(3, { near: true }); later(1000, () => say('ho gaya', { intent: 'ack', heard: 'garlic ho gaya' })); },
     },
     {
-      title: 'Too loud for voice? Use a palm',
-      body: 'With the exhaust fan on high, the kitchen is louder than speech, so voice pauses itself and says so. A palm held for half a second, then a swipe, still works.',
-      sim: 'Simulated: fan on high, then a palm',
-      run() { cookAt(5); S.loudOverride = true; later(1500, () => { S.engaged = true; S.engagedAt = Date.now(); }); },
+      title: 'Too loud for voice? Use your thumb',
+      body: 'With the exhaust fan on high, the kitchen is louder than speech. Hold a thumbs up for 3 seconds to move on, or a thumbs down to go back.',
+      sim: 'Simulated: fan on high, then a thumbs up',
+      run() { cookAt(5); S.loudOverride = true; later(1500, () => api.thumbsUp()); },
     },
     {
       title: 'Warn before, not during',
@@ -172,7 +172,7 @@ export function createTour(api) {
     i = -1;
     S.demo = false;
     if (savedFlags) Object.assign(S.flags, savedFlags);
-    Object.assign(S, { nearOverride: null, loudOverride: null, engaged: false, sheet: null, alert: null, notice: null, echo: null, voiceState: 'off', camState: 'off' });
+    Object.assign(S, { nearOverride: null, loudOverride: null, holdGesture: null, sheet: null, alert: null, notice: null, echo: null, voiceState: 'off', camState: 'off' });
     document.body.classList.remove('touring');
     bar.innerHTML = '';
     api.store.clearSession();

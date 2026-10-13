@@ -42,8 +42,7 @@ const S = {
   voiceState: 'off',
   camState: 'off',
   micState: 'off',
-  armProgress: null,
-  engaged: false,
+  holdGesture: null,
   holding: null,
   pendingConfirm: null,
   pendingScale: null,
@@ -58,7 +57,7 @@ const S = {
 };
 // Sensing thresholds. These are starting guesses: tune them in the demo panel with your own cooker, kitchen and camera.
 // Tuned values are saved on this device, so the next cook starts with them.
-const CFG = { loudDb: -38, whistleDb: -32, whistleRatio: 0.58, whistleLowHz: 1700, whistleHighHz: 6000, nearEnter: 0.22 };
+const CFG = { loudDb: -38, whistleDb: -32, whistleRatio: 0.58, whistleLowHz: 1700, whistleHighHz: 6000, nearEnter: 0.22, gestureHoldMs: 3000 };
 
 const R = () => S.recipe;
 const STEPS = () => R().steps;
@@ -401,6 +400,24 @@ function undo(via) {
   persistNow();
 }
 
+// Exit: leave the cook from any step and go back to the recipe list. Asks first; a second hold on Exit,
+// "haan" or a thumbs up confirms; "nahi" or a thumbs down stays.
+function askExit() {
+  if (S.pendingConfirm && S.pendingConfirm.action === exitToLibrary && Date.now() < S.pendingConfirm.until) { exitToLibrary(); return; }
+  askToConfirm('Exit this cook?', 'Say “haan” or hold thumbs up to leave, “nahi” or thumbs down to stay.', exitToLibrary, 'soft');
+  say('Exit this cook?');
+}
+
+function exitToLibrary() {
+  stopSpeaking();
+  closeVideo();
+  store.clearSession();
+  Object.assign(S, { alert: null, sheet: null, notice: null, echo: null, pendingConfirm: null, pendingScale: null, timers: {}, holdGesture: null, awaySince: null });
+  S.screen = 'library';
+  log('exit to recipes');
+  render();
+}
+
 function finish() {
   S.screen = 'done';
   S.alert = null;
@@ -547,6 +564,17 @@ function doAck(via) {
   }
   // A beat with no countdown waits for you ("heat the ghee"), so "ho gaya" moves it on.
   if (st.beats && S.beatRemaining == null) next(via);
+}
+
+function hasAckTarget() {
+  if (S.alert) return true;
+  if (S.pendingConfirm && Date.now() <= S.pendingConfirm.until) return true;
+  if (S.sheet) return true;
+  if (Object.values(S.timers).some((t) => t.state === 'due' && t.type === 'checkin')) return true;
+  const st = step();
+  if (st && st.checklist && st.checklist.some((_, k) => !S.checked[`${S.step}:${k}`])) return true;
+  if (st && st.beats && S.beatRemaining == null) return true;
+  return false;
 }
 
 function handleIntent(cmd, via) {
@@ -758,24 +786,43 @@ function startVoice() {
   recognizer.start();
 }
 
-const gestures = new GestureInterpreter({
-  onProgress: (p) => { S.armProgress = p; },
-  onEngage: () => { S.engaged = true; S.engagedAt = Date.now(); S.armProgress = null; log('gesture: palm held, engaged'); },
-  onCancel: (why) => { S.engaged = false; log(`gesture: cancelled (${why})`); },
-  onSwipe: (dir) => {
-    S.engaged = false;
-    log(`gesture: swipe ${dir}`);
-    if (S.alert) return;
-    if (dir === 'left') next({ kind: 'gesture', label: 'Swiped left' });
-    else back({ kind: 'gesture', label: 'Swiped right' });
-  },
-  onThumb: () => {
+function handleThumb(dir) {
+  if (S.screen !== 'cook') return;
+  if (dir === 'up') {
     log('gesture: thumbs up');
-    if (S.screen !== 'cook') return;
-    const via = { kind: 'gesture', label: 'Thumbs up' };
-    if (S.pendingConfirm && Date.now() < S.pendingConfirm.until) { const p = S.pendingConfirm; S.pendingConfirm = null; S.notice = null; p.action(); return; }
-    doAck(via);
-  },
+    if (S.pendingConfirm && Date.now() <= S.pendingConfirm.until) {
+      const p = S.pendingConfirm;
+      S.pendingConfirm = null;
+      S.notice = null;
+      p.action();
+      return;
+    }
+    if (hasAckTarget()) {
+      doAck({ kind: 'gesture', label: 'Thumbs up' });
+      return;
+    }
+    next({ kind: 'gesture', label: 'Thumbs up: next step' });
+  } else if (dir === 'down') {
+    log('gesture: thumbs down');
+    if (S.pendingConfirm && Date.now() <= S.pendingConfirm.until) {
+      S.pendingConfirm = null;
+      S.notice = null;
+      echo({ kind: 'gesture', label: 'Thumbs down' }, 'okay, staying here', { undoable: false });
+      return;
+    }
+    if (S.alert) {
+      log('gesture: thumbs down ignored during alert');
+      return;
+    }
+    back({ kind: 'gesture', label: 'Thumbs down: back one step' });
+  }
+}
+
+const gestures = new GestureInterpreter({
+  onProgress: (v) => { S.holdGesture = v; },
+  onThumb: (dir) => handleThumb(dir),
+}, {
+  holdMs: () => CFG.gestureHoldMs,
 });
 
 const nearDetector = new NearDetector((near) => { S.nearAuto = near; log(`camera: ${near ? 'near' : 'far'}`); }, {
@@ -840,7 +887,7 @@ function stopSensors() {
   if (micStop) { try { micStop(); } catch (_) { /* ignore */ } micStop = null; }
   if (camLoopStop) { camLoopStop(); camLoopStop = null; }
   if (camStream) { camStream.getTracks().forEach((t) => t.stop()); camStream = null; camEl.srcObject = null; }
-  Object.assign(S, { voiceState: 'off', camState: 'off', micState: 'off', loudAuto: false, nearAuto: false, engaged: false });
+  Object.assign(S, { voiceState: 'off', camState: 'off', micState: 'off', loudAuto: false, nearAuto: false, holdGesture: null });
 }
 
 function toggleMute() {
@@ -919,7 +966,11 @@ function resetHold(h) {
 const endHold = () => {
   const h = S.holding;
   if (!h) return;
-  if (!h.done) S.notice = { created: Date.now(), pot: 'soft', text: 'Hold a little longer', sub: 'Half a second, so splashes and bumps never count.', until: Date.now() + 2500 };
+  if (!h.done) {
+    S.notice = h.action === 'exit'
+      ? { created: Date.now(), pot: 'soft', text: 'Hold to exit', sub: 'Hold Exit for a second, so a splash never ends your cook.', until: Date.now() + 2000 }
+      : { created: Date.now(), pot: 'soft', text: 'Hold a little longer', sub: 'Half a second, so splashes and bumps never count.', until: Date.now() + 2500 };
+  }
   S.holding = null;
   resetHold(h);
   render();
@@ -934,6 +985,7 @@ function runHold(action) {
   else if (action === 'ack') doAck(via);
   else if (action === 'close') closeSheet();
   else if (action === 'mute') { toggleMute(); return; }
+  else if (action === 'exit') { askExit(); render(); return; }
   else if (action === 'video') { if (videoCtl) { if (videoCtl.playing()) videoCtl.pause(); else { S.video.waiting = false; videoCtl.play(); } } }
   else if (action.startsWith('tick:')) tickItem(Number(action.slice(5)), via, { toggle: true });
   persistNow();
@@ -965,6 +1017,7 @@ stage.addEventListener('click', (e) => {
   if (a === 'setup-done') { S.screen = 'start'; }
   if (a === 'restart') { S.screen = 'start'; }
   if (a === 'library') { S.screen = 'library'; }
+  if (a === 'exitdone') { exitToLibrary(); return; }
   render();
 });
 stage.addEventListener('change', (e) => {
@@ -1045,17 +1098,16 @@ function pills() {
   else voice = `<div class="pill">${I.mic(20)}<div>Listening</div><div class="meter"><i style="height:6px"></i><i style="height:13px"></i><i style="height:9px"></i></div></div>`;
 
   let cam;
-  const arm = S.armProgress != null
-    ? `<svg class="arm" viewBox="0 0 100 40" preserveAspectRatio="none"><rect x="1.5" y="1.5" width="97" height="37" rx="18.5" fill="none" stroke="#F26829" stroke-width="3" pathLength="100" stroke-dasharray="${(S.armProgress * 100).toFixed(1)} 100"/></svg>`
+  const arm = S.holdGesture != null
+    ? `<svg class="arm" viewBox="0 0 100 40" preserveAspectRatio="none"><rect x="1.5" y="1.5" width="97" height="37" rx="18.5" fill="none" stroke="#F26829" stroke-width="3" pathLength="100" stroke-dasharray="${(S.holdGesture.p * 100).toFixed(1)} 100"/></svg>`
     : '';
-  if (S.camState === 'demo' && S.engaged) cam = `<div class="pill dark">${I.palm(20, '#fff')}<div>Palm (simulated)</div></div>`;
-  else if (S.camState === 'demo') cam = `<div class="pill demo">${I.palm(20)}<div>Gestures: simulated</div></div>`;
+  if (S.camState === 'demo') cam = `<div class="pill demo">${I.thumb(20)}<div>Gestures: simulated</div></div>`;
   else if (!S.flags.camera || S.camState === 'off') cam = `<div class="pill off">${I.camera(20, '#4B5056')}<div>Camera off</div></div>`;
-  else if (S.camState === 'starting' || S.camState === 'loading') cam = `<div class="pill">${I.palm(20)}<div>Gestures loading</div></div>`;
-  else if (S.camState === 'unavailable') cam = `<div class="pill off">${I.palm(20, '#4B5056')}<div>No gestures</div></div>`;
-  else if (S.engaged) cam = `<div class="pill dark">${I.palm(20, '#fff')}<div>Palm seen</div></div>`;
+  else if (S.camState === 'starting' || S.camState === 'loading') cam = `<div class="pill">${I.thumb(20)}<div>Gestures loading</div></div>`;
+  else if (S.camState === 'unavailable') cam = `<div class="pill off">${I.thumb(20, '#4B5056')}<div>No gestures</div></div>`;
+  else if (S.holdGesture != null) cam = `<div class="pill">${I.thumb(20)}<div>${S.holdGesture.dir === 'down' ? 'Thumbs down: hold' : 'Thumbs up: hold'}</div>${arm}</div>`;
   else if (isNear()) cam = `<div class="pill dark">${I.camera(20, '#fff')}<div>You're close</div></div>`;
-  else cam = `<div class="pill">${I.palm(20)}<div>Gestures</div>${arm}</div>`;
+  else cam = `<div class="pill">${I.thumb(20)}<div>Thumbs up: hold</div>${arm}</div>`;
   const holdable = S.screen === 'cook' && !S.demo;
   return `<div class="pills${holdable ? ' held' : ''}"${holdable ? ' data-hold="mute" data-hold-ms="1000" title="Hold for a second to mute the microphone and camera"' : ''}>${voice}${cam}${holdable ? '<div class="holdfill" data-fill></div>' : ''}</div>`;
 }
@@ -1065,6 +1117,7 @@ function topbar() {
     <div class="title"><div class="a">${esc(R().title)}</div><div class="b">${S.servings} servings</div></div>
     <div class="progress"><div class="lbl">Step ${S.step + 1} of ${STEPS().length}</div><div class="segs${STEPS().length > 16 ? ' tight' : ''}">${STEPS().map((_, i) => seg(i)).join('')}</div></div>
     ${pills()}
+    <button type="button" class="exitbtn" data-hold="exit" data-hold-ms="1000" aria-label="Exit, hold for a second to leave this cook">${I.x(22, '#171B20')}<span>Exit</span><div class="holdfill" data-fill></div></button>
   </div>`;
 }
 
@@ -1137,24 +1190,18 @@ function videoStepBody(st) {
 }
 
 function gestureHud() {
-  const st = step();
-  let nextLabel;
-  let backLabel;
-  if (st.beats) {
-    nextLabel = S.beat < st.beats.length - 1 ? `Next: ${st.beats[S.beat + 1].label.toLowerCase()}` : `Next: ${STEPS()[S.step + 1] ? Tplain(STEPS()[S.step + 1].headline).toLowerCase() : 'finish'}`;
-    backLabel = S.beat > 0 ? `Back: ${st.beats[S.beat - 1].label.toLowerCase()}` : `Back: step ${S.step}`;
-  } else {
-    nextLabel = S.step < STEPS().length - 1 ? `Next: ${Tplain(STEPS()[S.step + 1].headline).toLowerCase()}` : 'Next: finish';
-    backLabel = S.step > 0 ? `Back: step ${S.step}` : 'Back: nothing before this';
-  }
+  const g = S.holdGesture || { dir: 'up', p: 0 };
+  const isUp = g.dir === 'up';
+  const label = isUp ? (hasAckTarget() ? 'Done' : 'Next step') : 'Back one step';
+  const pct = Math.round((g.p || 0) * 100);
+  const rot = isUp ? '' : 'transform:rotate(180deg);';
   return `<div class="gesture-hud">
-    <div class="palm">${I.palm(64, '#171B20', 1.8)}</div>
-    <div><div class="k">Palm seen</div><div class="big">Now swipe</div></div>
-    <div class="dirs">
-      <div class="dir">${I.left(44)}<div style="min-width:0"><div class="a">Swipe left</div><div class="b">${esc(nextLabel)}</div></div></div>
-      <div class="dir r"><div style="text-align:right;min-width:0"><div class="a">Swipe right</div><div class="b">${esc(backLabel)}</div></div>${I.right(44)}</div>
+    <div class="palm" style="${rot}">${I.thumb(64, '#171B20')}</div>
+    <div><div class="k">Thumbs ${isUp ? 'up' : 'down'}</div><div class="big">${esc(label)}</div></div>
+    <div style="width:80%;max-width:440px;height:18px;background:#E6E8EB;border-radius:9px;overflow:hidden">
+      <div style="width:${pct}%;height:100%;background:var(--ink);border-radius:9px;transition:width 60ms linear"></div>
     </div>
-    <div class="foot">Drop your hand to cancel. Swipes count for 3 seconds.</div>
+    <div class="foot">Keep holding. Drop your hand to cancel.</div>
   </div>`;
 }
 
@@ -1268,8 +1315,8 @@ function bottomBar(st) {
   let nextKey = 'Next';
   if (nx && nx.waitFor && !potReady(nx.waitFor)) nextKey = potOf(R(), nx.waitFor) && potOf(R(), nx.waitFor).vessel === 'cooker' ? 'Next, once the cooker opens' : `Next, once the ${esc(potName(nx.waitFor).toLowerCase())} is ready`;
   const hints = videoOn()
-    ? `<div class="hint">${I.mic(18)}<div><b>“ruko”</b> pause</div></div><div class="hint">${I.mic(18)}<div><b>“aage”</b> when paused</div></div><div class="hint">${I.palm(18)}<div><b>Palm</b>, then swipe</div></div>`
-    : `<div class="hint">${I.mic(18)}<div><b>“aage”</b> next</div></div><div class="hint">${I.mic(18)}<div><b>“peeche”</b> back</div></div><div class="hint">${I.palm(18)}<div><b>Palm</b>, then swipe</div></div>`;
+    ? `<div class="hint">${I.mic(18)}<div><b>“ruko”</b> pause</div></div><div class="hint">${I.mic(18)}<div><b>“aage”</b> when paused</div></div><div class="hint">${I.thumb(18)}<div><b>Hold:</b> next</div></div>`
+    : `<div class="hint">${I.mic(18)}<div><b>“aage”</b> next</div></div><div class="hint">${I.thumb(18)}<div><b>Hold:</b> next</div></div><div class="hint"><span style="display:inline-flex;transform:rotate(180deg)">${I.thumb(18)}</span><div><b>Hold:</b> back</div></div>`;
   return `<div class="bottom">
     <div class="nextup"><div class="k">${nextKey}</div><div class="t">${nextText}</div></div>
     <div class="hints">${hints}</div>
@@ -1367,7 +1414,7 @@ function sheetView() {
     return `<div class="sheet" data-hold="close"><div class="topbar"><div class="title"><div class="a">What you can say</div></div><div class="hint">Hold anywhere to close</div></div>
       <div class="body" style="grid-template-columns:1fr;align-content:start;padding:8px 48px">
         <div class="cmdgrid">${vocab.map(([w, d]) => `<b>${w}</b><div>${d}</div>`).join('')}</div>
-        <div style="font-size:22px;color:var(--ink2);margin-top:24px">Gestures: hold up a palm for half a second, then swipe left (next) or right (back). Thumbs up clears an alert.</div>
+        <div style="font-size:22px;color:var(--ink2);margin-top:24px">Gestures: hold a thumbs up for 3 seconds for the next step (or to clear an alert), a thumbs down for 3 seconds to go back. Hold Exit for 1 second to leave the cook.</div>
       </div></div>`;
   }
   if (sh.kind === 'recap') {
@@ -1507,7 +1554,7 @@ function setupView() {
         <div class="sb2">Hears your commands (“aage”, “ho gaya”) and counts cooker whistles, so your hands never need to touch the screen.</div>
         <div class="sp">Whistles and noise are measured on this device. Spoken commands go to the browser's speech service (Google, in Chrome) to be recognised. Nothing is recorded.</div></div>
       <div class="card scard"><div class="sh">${I.camera(26)}<div class="st">Camera</div>${st(p.cam)}</div>
-        <div class="sb2">Sees a palm, a swipe or a thumbs up, and notices when you come close so big elbow targets can appear.</div>
+        <div class="sb2">Sees a thumbs up or thumbs down, and notices when you come close so big elbow targets can appear.</div>
         <div class="sp">Runs entirely on this device. No picture leaves it and nothing is recorded.</div></div>
       <div class="card scard"><div class="sh">${I.lock(26)}<div class="st">Your control</div></div>
         <div class="sb2">Hold the status pills at the top of the cooking screen for a second to switch the microphone and camera fully off, and again to switch them back on.</div>
@@ -1548,7 +1595,7 @@ function doneView() {
           <div style="font-size:26px;line-height:1.35;color:#C9CCD1">Say what you'd change. It's saved with this recipe.</div>
         </div>
         ${saved ? `<div style="display:flex;flex-direction:column;gap:12px"><div style="font-size:22px;color:#C9CCD1">Heard</div><div style="font-size:34px;font-weight:700;line-height:1.2">“${esc(saved)}”</div><div class="saved">${I.check(26, '#fff')}<div>Saved for next time</div></div></div>` : '<div style="font-size:24px;color:#C9CCD1">Listening for your note…</div>'}
-        <div style="font-size:20px;color:#C9CCD1">Say <b style="color:#fff">“khatam karo”</b> to close Cook-Along</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:16px"><div style="font-size:20px;color:#C9CCD1">Say <b style="color:#fff">“khatam karo”</b> to close Cook-Along</div><button type="button" class="crumb-btn" data-tap="exitdone" style="background:#fff;color:#171B20;height:48px;padding:0 16px 0 12px">${I.left(18, '#171B20', 2.4)}<span>Back to recipes</span></button></div>
       </div>
     </div><div style="height:48px"></div></div>`;
 }
@@ -1588,13 +1635,13 @@ function mount(layout) {
       ? '<div class="main"><div id="Lback" class="slot"></div><div id="Lstep" class="slot"></div><div id="Lnext" class="slot"></div></div>'
       : '<div class="main"><div id="Lstep" class="slot"></div><div id="Lrail" class="slot"></div></div>';
   root.innerHTML = `<div class="cook ${layout === 'vfar' ? 'far video' : layout === 'vnear' ? 'near video' : layout}"><div id="Ltop" class="slot"></div>${mid}<div id="Lbottom" class="slot"></div></div>`
-    + '<div id="Lover"><div id="Lhud" class="layer hud"></div><div id="Lsheet" class="layer full"></div><div id="Lalert" class="layer full"></div></div>';
+    + '<div id="Lover"><div id="Lsheet" class="layer full"></div><div id="Lalert" class="layer full"></div><div id="Lhud" class="layer hud" style="z-index:20"></div></div>';
 }
 
 const lib = libraryScreens({ S, render: () => render(), openRecipe, store, log });
 const tour = createTour({
   S, DAL: DAL_TADKA, store, render: () => render(), fit: () => fit(), openRecipe, startCooking, goToStep, handleIntent, addWhistle, showRecap, finish, stopSpeaking,
-  thumbsUp: () => gestures.h.onThumb(),
+  thumbsUp: () => handleThumb('up'),
 });
 
 function render() {
@@ -1626,8 +1673,8 @@ function render() {
     }
     setHTML($('Lbottom'), bottomBar(st));
     if (vid) placeVideo();
-    const hud = S.engaged && !S.alert && !S.sheet;
-    setLayer($('Lhud'), hud ? `hud${S.engagedAt}` : null, hud ? gestureHud() : '');
+    const hud = S.holdGesture != null;
+    setLayer($('Lhud'), hud ? `hud-${S.holdGesture.dir}` : null, hud ? gestureHud() : '');
     setLayer($('Lsheet'), S.sheet ? `sheet${S.sheet.created}` : null, sheetView());
     setLayer($('Lalert'), S.alert ? `alert${S.alert.since}` : null, alertView());
     // Overlays cover the video too.
@@ -1681,12 +1728,12 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function renderDemo() {
   demoEl.innerHTML = `
     <h3>Demo controls</h3>
-    <div style="color:#AAB0B7;margin-bottom:8px">For testing and recording. Keyboard: → next, ← back, W whistle, L loud, N near, P palm, T thumbs up, A away, H help, D this panel.</div>
+    <div style="color:#AAB0B7;margin-bottom:8px">For testing and recording. Keyboard: → next, ← back, W whistle, L loud, N near, T thumbs up, G thumbs down, A away, H help, D this panel.</div>
     <div class="row">
       <button data-d="whistle">Whistle (W)</button>
       <button data-d="loud" class="${S.loudOverride ? 'on' : ''}">Too loud (L)</button>
       <button data-d="near" class="${S.nearOverride ? 'on' : ''}">Near (N)</button>
-      <button data-d="palm">Palm + swipe (P)</button>
+      <button data-d="thumbDown">Thumbs down (G)</button>
       <button data-d="thumb">Thumbs up (T)</button>
       <button data-d="away">Away / back (A)</button>
     </div>
@@ -1705,6 +1752,8 @@ function renderDemo() {
     <input type="range" min="-60" max="-5" value="${CFG.whistleDb}" data-cfg="whistleDb">
     <label>Near when face width is over: <span id="dnearv">${CFG.nearEnter}</span> of the frame</label>
     <input type="range" min="0.05" max="0.6" step="0.01" value="${CFG.nearEnter}" data-cfg="nearEnter">
+    <label>Gesture hold (s): <span id="dholdv">${(CFG.gestureHoldMs / 1000).toFixed(1)}</span></label>
+    <input type="range" min="1" max="5" step="0.5" value="${CFG.gestureHoldMs / 1000}" data-cfg="gestureHoldSec">
     <div style="color:#AAB0B7;margin:4px 0 8px">Tuned values are saved on this device.</div>
     <label>Status</label>
     <div class="log" id="dstatus"></div>
@@ -1720,7 +1769,7 @@ function renderDemo() {
 function renderDemoStatus() {
   const el = demoEl.querySelector('#dstatus');
   if (!el) return;
-  el.textContent = `voice: ${S.voiceState} (${S.flags.lang})\ncamera: ${S.camState}  near: ${isNear()}  face: ${(S.faceRatio || 0).toFixed(2)}  engaged: ${S.engaged}\nmic: ${S.micState}  loud: ${isLoud()}  whistle band: ${S.level.ratio.toFixed(2)}${videoId() ? `\nvideo: ${videoCtl ? (videoCtl.ready ? `state ${videoCtl.state} at ${fmtTime(S.video.time)}` : 'loading') : 'off'}` : ''}`;
+  el.textContent = `voice: ${S.voiceState} (${S.flags.lang})\ncamera: ${S.camState}  near: ${isNear()}  face: ${(S.faceRatio || 0).toFixed(2)}  hold: ${S.holdGesture ? `${S.holdGesture.dir} ${(S.holdGesture.p * 100).toFixed(0)}%` : 'none'}\nmic: ${S.micState}  loud: ${isLoud()}  whistle band: ${S.level.ratio.toFixed(2)}${videoId() ? `\nvideo: ${videoCtl ? (videoCtl.ready ? `state ${videoCtl.state} at ${fmtTime(S.video.time)}` : 'loading') : 'off'}` : ''}`;
   const m = demoEl.querySelector('#dmeter');
   if (m) m.style.width = `${Math.max(0, Math.min(100, (S.level.db + 80) * 1.25))}%`;
   const l = demoEl.querySelector('#dlvl');
@@ -1728,12 +1777,28 @@ function renderDemoStatus() {
 }
 function renderDemoLog() { const el = demoEl.querySelector('#dlog'); if (el) el.textContent = S.log.join('\n'); }
 
+let demoSimTimer = null;
 function demoAction(a) {
   if (a === 'whistle') addWhistle('demo');
   if (a === 'loud') S.loudOverride = S.loudOverride ? null : true;
   if (a === 'near') S.nearOverride = !isNear();
-  if (a === 'palm') { S.engaged = true; S.engagedAt = Date.now(); setTimeout(() => { if (S.engaged) { S.engaged = false; next({ kind: 'gesture', label: 'Swiped left' }); } }, 1400); }
-  if (a === 'thumb') gestures.h.onThumb();
+  if (a === 'thumb' || a === 'thumbDown') {
+    if (demoSimTimer) clearInterval(demoSimTimer);
+    const dir = a === 'thumb' ? 'up' : 'down';
+    const t0 = performance.now();
+    demoSimTimer = setInterval(() => {
+      const p = Math.min(1, (performance.now() - t0) / 600);
+      S.holdGesture = { dir, p };
+      render();
+      if (p >= 1) {
+        clearInterval(demoSimTimer);
+        demoSimTimer = null;
+        S.holdGesture = null;
+        handleThumb(dir);
+        render();
+      }
+    }, 40);
+  }
   if (a === 'away') {
     if (!S.awaySince) { S.awaySince = Date.now(); log('demo: away'); }
     else showRecap();
@@ -1761,10 +1826,14 @@ demoEl.addEventListener('change', (e) => {
 demoEl.addEventListener('input', (e) => {
   const k = e.target.dataset.cfg;
   if (!k) return;
-  CFG[k] = Number(e.target.value);
+  if (k === 'gestureHoldSec') {
+    CFG.gestureHoldMs = Number(e.target.value) * 1000;
+  } else {
+    CFG[k] = Number(e.target.value);
+  }
   saveSettings();
-  const lbl = demoEl.querySelector({ loudDb: '#dloudv', whistleDb: '#dwhv', nearEnter: '#dnearv' }[k]);
-  if (lbl) lbl.textContent = CFG[k];
+  const lbl = demoEl.querySelector({ loudDb: '#dloudv', whistleDb: '#dwhv', nearEnter: '#dnearv', gestureHoldSec: '#dholdv' }[k]);
+  if (lbl) lbl.textContent = k === 'gestureHoldSec' ? Number(e.target.value).toFixed(1) : CFG[k];
 });
 document.getElementById('demoFab').addEventListener('click', () => { demoEl.classList.toggle('open'); if (demoEl.classList.contains('open')) renderDemo(); });
 
@@ -1781,7 +1850,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'w') demoAction('whistle');
   else if (k === 'l') demoAction('loud');
   else if (k === 'n') demoAction('near');
-  else if (k === 'p') demoAction('palm');
+  else if (k === 'g') demoAction('thumbDown');
   else if (k === 't') demoAction('thumb');
   else if (k === 'a') demoAction('away');
   else if (k === 'h') demoAction('help');
@@ -1796,7 +1865,9 @@ window.addEventListener('keydown', (e) => {
 window.__cookAlong = {
   get tour() { return tour; },
   toggleMute,
+  askExit, exitToLibrary,
   S, CFG, handleIntent, parseCommand, addWhistle, next, back, startCooking, render, goToStep, openRecipe, store, safeSpoken, onTranscript,
+  gestures, handleThumb, hasAckTarget,
   get video() { return videoCtl; },
 };
 

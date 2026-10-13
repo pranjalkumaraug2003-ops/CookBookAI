@@ -97,9 +97,9 @@ mark.qty { background: var(--masala-tint); color: inherit; border-radius: 12px; 
 /* ---------- cook screen ---------- */
 .cook { position: absolute; inset: 0; display: flex; flex-direction: column; }
 .topbar { height: 76px; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.topbar .title { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
-.topbar .title .a { font-size: 21px; font-weight: 800; white-space: nowrap; }
-.topbar .title .b { font-size: 19px; color: var(--ink2); white-space: nowrap; }
+.topbar .title { display: flex; align-items: baseline; gap: 12px; min-width: 0; overflow: hidden; }
+.topbar .title .a { font-size: 21px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.topbar .title .b { font-size: 19px; color: var(--ink2); white-space: nowrap; flex: none; }
 .progress { display: flex; align-items: center; gap: 14px; }
 .progress .lbl { font-size: 19px; font-weight: 700; white-space: nowrap; }
 .segs { display: flex; gap: 4px; }
@@ -586,3 +586,9 @@ body.touring .demo-fab { display: none; }
 #stage.portrait .setup { padding: 20px 18px; }
 #stage.portrait .setup h1 { font-size: 32px; }
 #stage.portrait .setup-grid { grid-template-columns: minmax(0, 1fr); }
+
+/* Exit: a quiet hold button at the end of the cooking top bar. */
+.exitbtn { position: relative; overflow: hidden; display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-size: 17px; font-weight: 700; cursor: pointer; touch-action: none; flex: none; }
+.exitbtn .holdfill { position: absolute; left: 0; bottom: 0; height: 4px; width: 0; background: var(--ink); }
+#stage.portrait .exitbtn { min-height: 48px; padding: 0 14px; font-size: 16px; }
+.topbar .progress { flex: none; }

@@ -128,23 +128,66 @@ check('voice: Hindi gets the Hindi voice', chooseVoice(chrome, 'hi-IN').name ===
 check('voice: nothing matches, nothing is chosen', chooseVoice([V('Google Deutsch', 'de-DE', false)], 'en-IN') === null);
 check('voice: a saved choice wins when it fits the language', chooseVoice(edge, 'en-IN', 'Microsoft Heera - English (India)').name.includes('Heera'));
 
-// ---- gestures: the cases the QA run found
-const mk = (log) => new GestureInterpreter({ onProgress() {}, onEngage: () => log.push('engage'), onSwipe: (d) => log.push(`swipe ${d}`), onCancel: (r) => log.push(`cancel ${r}`), onThumb: () => log.push('thumb') });
-const run = (g, frames) => { for (const [t, name, score, x] of frames) g.feed(name ? { name, score, x } : null, t); };
+// ---- gestures: thumbs up and thumbs down holds
+const mk = (log, opts = {}) => new GestureInterpreter({ onProgress() {}, onThumb: (d) => log.push(d) }, opts);
+
+// 1. A thumbs up held 3.1 s fires up once.
 let lg = []; let g = mk(lg);
-run(g, [[0, 'Thumb_Up', 0.9, 0.5], [100, 'Thumb_Up', 0.9, 0.5], [200, 'Thumb_Up', 0.9, 0.5], [266, 'Thumb_Up', 0.5, 0.5], [333, 'Thumb_Up', 0.9, 0.5], [450, 'Thumb_Up', 0.9, 0.5]]);
-check('gesture: one weak frame does not restart the thumbs-up hold', lg.includes('thumb'), lg);
+for (let t = 0; t <= 3100; t += 100) g.feed({ name: 'Thumb_Up', score: 0.9 }, t);
+check('gesture: thumbs up held 3.1 s fires up once', lg.length === 1 && lg[0] === 'up', lg);
+
+// 2. Held 2.9 s, it does not fire.
 lg = []; g = mk(lg);
-run(g, [[0, 'Open_Palm', 0.9, 0.3], [100, 'Open_Palm', 0.9, 0.3], [300, 'Open_Palm', 0.9, 0.3], [550, 'Open_Palm', 0.9, 0.3], [800, 'Open_Palm', 0.9, 0.3], [1000, 'Open_Palm', 0.9, 0.45]]);
-check('gesture: a 0.15 move after engaging is a swipe', lg.join() === 'engage,swipe left', lg);
+for (let t = 0; t <= 2900; t += 100) g.feed({ name: 'Thumb_Up', score: 0.9 }, t);
+check('gesture: held 2.9 s does not fire', lg.length === 0, lg);
+
+// 3. Held 7 s, it fires once.
 lg = []; g = mk(lg);
-run(g, [[0, 'Open_Palm', 0.9, 0.5], [66, 'None', 0.9, 0.5], [200, 'None', 0.9, 0.5], [400, 'None', 0.9, 0.5], [600, 'None', 0.9, 0.5]]);
-check('gesture: a hand that is not a palm cannot finish the arming ring', !lg.includes('engage'), lg);
+for (let t = 0; t <= 7000; t += 100) g.feed({ name: 'Thumb_Up', score: 0.9 }, t);
+check('gesture: held 7 s fires once', lg.length === 1 && lg[0] === 'up', lg);
+
+// 4. Released for 500 ms and held again for 3.1 s, it fires twice in total.
 lg = []; g = mk(lg);
-run(g, [[0, 'Open_Palm', 0.9, 0.3], [300, 'Open_Palm', 0.9, 0.3], [550, 'Open_Palm', 0.9, 0.3], [700, null], [1000, null], [1200, 'Open_Palm', 0.9, 0.5]]);
-check('gesture: losing the hand to motion blur for 0.5 s still allows the swipe', lg.join() === 'engage,swipe left', lg);
-const two = { landmarks: [[{ x: 0.8 }], [{ x: 0.4 }]], gestures: [[{ categoryName: 'None', score: 0.9 }], [{ categoryName: 'Open_Palm', score: 0.7 }]] };
-check('gesture: with two hands, the one making a known gesture is used', pickHand(two).name === 'Open_Palm' && pickHand(two).x === 0.4);
+for (let t = 0; t <= 3100; t += 100) g.feed({ name: 'Thumb_Up', score: 0.9 }, t);
+for (let t = 3200; t <= 3600; t += 100) g.feed(null, t);
+for (let t = 3700; t <= 6800; t += 100) g.feed({ name: 'Thumb_Up', score: 0.9 }, t);
+check('gesture: released for 500 ms and held again for 3.1 s fires twice in total', lg.length === 2 && lg[0] === 'up' && lg[1] === 'up', lg);
+
+// 5. A 250 ms dropout in the middle still fires.
+lg = []; g = mk(lg);
+for (let t = 0; t <= 1000; t += 100) g.feed({ name: 'Thumb_Up', score: 0.9 }, t);
+g.feed(null, 1100);
+g.feed(null, 1200);
+for (let t = 1250; t <= 3100; t += 50) g.feed({ name: 'Thumb_Up', score: 0.9 }, t);
+check('gesture: a 250 ms dropout in the middle still fires', lg.length === 1 && lg[0] === 'up', lg);
+
+// 6. A 500 ms dropout resets the hold.
+lg = []; g = mk(lg);
+for (let t = 0; t <= 1000; t += 100) g.feed({ name: 'Thumb_Up', score: 0.9 }, t);
+g.feed(null, 1200);
+g.feed(null, 1500);
+for (let t = 1600; t <= 3500; t += 100) g.feed({ name: 'Thumb_Up', score: 0.9 }, t);
+check('gesture: a 500 ms dropout resets the hold', lg.length === 0, lg);
+
+// 7. Switching from up to down at 2 s, then holding down for 3.1 s, fires down only.
+lg = []; g = mk(lg);
+for (let t = 0; t <= 2000; t += 100) g.feed({ name: 'Thumb_Up', score: 0.9 }, t);
+for (let t = 2000; t <= 5100; t += 100) g.feed({ name: 'Thumb_Down', score: 0.9 }, t);
+check('gesture: switching from up to down at 2 s then holding down 3.1 s fires down only', lg.length === 1 && lg[0] === 'down', lg);
+
+// 8. holdMs given as a getter returning 1500 fires at 1.6 s.
+lg = []; g = mk(lg, { holdMs: () => 1500 });
+for (let t = 0; t <= 1600; t += 100) g.feed({ name: 'Thumb_Up', score: 0.9 }, t);
+check('gesture: holdMs given as a getter returning 1500 fires at 1.6 s', lg.length === 1 && lg[0] === 'up', lg);
+
+// 9. A score of 0.5 never fires.
+lg = []; g = mk(lg);
+for (let t = 0; t <= 5000; t += 100) g.feed({ name: 'Thumb_Up', score: 0.5 }, t);
+check('gesture: a score of 0.5 never fires', lg.length === 0, lg);
+
+// 10. pickHand prefers Thumb_Down over None.
+const two = { landmarks: [[{ x: 0.8 }], [{ x: 0.4 }]], gestures: [[{ categoryName: 'None', score: 0.9 }], [{ categoryName: 'Thumb_Down', score: 0.7 }]] };
+check('gesture: pickHand prefers Thumb_Down over None', pickHand(two).name === 'Thumb_Down' && pickHand(two).x === 0.4);
 check('gesture: no hand gives null', pickHand({ landmarks: [], gestures: [] }) === null);
 
 // ---- WAV header writer

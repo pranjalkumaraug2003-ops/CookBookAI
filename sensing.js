@@ -42,7 +42,7 @@ export function pickHand(res) {
   for (let i = 0; i < hands.length; i++) {
     const top = res.gestures && res.gestures[i] && res.gestures[i][0];
     const h = { name: top ? top.categoryName : 'None', score: top ? top.score : 0, x: hands[i][0].x };
-    const known = h.name === 'Open_Palm' || h.name === 'Thumb_Up';
+    const known = h.name === 'Thumb_Up' || h.name === 'Thumb_Down';
     if (!best || (known && !best.known) || (known === best.known && h.score > best.hand.score)) best = { hand: h, known };
   }
   return best ? best.hand : null;
@@ -82,68 +82,115 @@ export function runVisionLoop(videoEl, models, { onHand, onFace }) {
   return () => { running = false; };
 }
 
-// Palm held for ARM_MS engages; then a sideways move within WINDOW_MS is a swipe.
-// "Swipe left" means the hand moves to the cook's left, which is +x in the raw (unmirrored) camera image.
+// Thumbs up and thumbs down hold gestures.
+// Poses count when name is Thumb_Up or Thumb_Down with score > 0.6.
+// Hold duration defaults to 3000 ms (or opts.holdMs getter).
 export class GestureInterpreter {
   constructor(handlers, opts = {}) {
-    this.h = handlers;
-    this.ARM_MS = opts.armMs || 500;
-    this.WINDOW_MS = opts.windowMs || 3000;
-    this.SWIPE_DX = opts.swipeDx || 0.1;
-    this.state = 'idle';
+    this.h = handlers || {};
+    this.opts = opts;
+    this.holdingDir = null;
     this.t0 = 0;
-    this.lastSeen = 0;
-    this.baseX = 0;
+    this.lastPoseTime = 0;
     this.cooldownUntil = 0;
-    this.thumbSince = null;
-    this.lastThumb = 0;
-    this.lastPalm = 0;
+    this.unreleased = null;
+    this.lastSeenUp = -10000;
+    this.lastSeenDown = -10000;
   }
 
-  reset() { this.state = 'idle'; this.h.onProgress(null); }
+  reset() {
+    this.holdingDir = null;
+    this.t0 = 0;
+    this.lastPoseTime = 0;
+    if (this.h.onProgress) this.h.onProgress(null);
+  }
 
   feed(hand, now) {
-    if (now < this.cooldownUntil) return;
-    const palm = hand && hand.name === 'Open_Palm' && hand.score > 0.55;
-    const thumb = hand && hand.name === 'Thumb_Up' && hand.score > 0.6;
-    if (hand) this.lastSeen = now;
-    if (palm) this.lastPalm = now;
-    if (thumb) this.lastThumb = now;
+    const pose = (hand && (hand.name === 'Thumb_Up' || hand.name === 'Thumb_Down') && hand.score > 0.6)
+      ? (hand.name === 'Thumb_Up' ? 'up' : 'down')
+      : null;
 
-    if (this.state === 'idle') {
-      if (thumb) {
-        if (this.thumbSince == null) this.thumbSince = now;
-        if (now - this.thumbSince > 400) { this.thumbSince = null; this.cooldownUntil = now + 1500; this.h.onThumb(); }
-        return;
+    if (pose === 'up') this.lastSeenUp = now;
+    if (pose === 'down') this.lastSeenDown = now;
+
+    if (this.unreleased === 'up' && now - this.lastSeenUp >= 400) {
+      this.unreleased = null;
+    }
+    if (this.unreleased === 'down' && now - this.lastSeenDown >= 400) {
+      this.unreleased = null;
+    }
+
+    const holdMs = typeof this.opts.holdMs === 'function' ? this.opts.holdMs() : (this.opts.holdMs || 3000);
+
+    if (!this.holdingDir) {
+      if (pose && this.unreleased !== pose) {
+        this.holdingDir = pose;
+        this.t0 = now;
+        this.lastPoseTime = now;
+        if (this.h.onProgress) this.h.onProgress({ dir: pose, p: 0 });
       }
-      // One weak frame must not restart the hold: forgive a gap of up to 250 ms.
-      if (this.thumbSince != null && now - this.lastThumb < 250) return;
-      this.thumbSince = null;
-      if (palm) { this.state = 'arming'; this.t0 = now; this.baseX = hand.x; this.h.onProgress(0); }
       return;
     }
 
-    if (this.state === 'arming') {
-      if (!palm && now - this.lastPalm > 250) { this.reset(); return; }
-      if (!palm && hand && hand.name !== 'Open_Palm' && hand.name !== 'None') { this.reset(); return; }
-      const p = Math.min(1, (now - this.t0) / this.ARM_MS);
-      this.h.onProgress(p);
-      if (hand) this.baseX = hand.x;
-      if (p >= 1) { this.state = 'engaged'; this.t0 = now; this.h.onEngage(); }
+    if (pose === this.holdingDir) {
+      this.lastPoseTime = now;
+      const p = Math.min(1, (now - this.t0) / holdMs);
+      if (p >= 1) {
+        if (now >= this.cooldownUntil) {
+          const firedDir = this.holdingDir;
+          this.holdingDir = null;
+          this.t0 = 0;
+          this.lastPoseTime = 0;
+          this.cooldownUntil = now + 1500;
+          this.unreleased = firedDir;
+          if (this.h.onProgress) this.h.onProgress(null);
+          if (this.h.onThumb) this.h.onThumb(firedDir);
+        } else {
+          if (this.h.onProgress) this.h.onProgress({ dir: this.holdingDir, p: 1 });
+        }
+      } else {
+        if (this.h.onProgress) this.h.onProgress({ dir: this.holdingDir, p });
+      }
       return;
     }
 
-    if (this.state === 'engaged') {
-      if (now - this.t0 > this.WINDOW_MS) { this.state = 'idle'; this.h.onCancel('timeout'); return; }
-      if (!hand) {
-        if (now - this.lastSeen > 700) { this.state = 'idle'; this.h.onCancel('dropped'); }
-        return;
+    if (pose) {
+      // Switching to opposite pose restarts hold for new pose
+      const newDir = pose;
+      this.holdingDir = null;
+      this.t0 = 0;
+      this.lastPoseTime = 0;
+      if (this.unreleased !== newDir) {
+        this.holdingDir = newDir;
+        this.t0 = now;
+        this.lastPoseTime = now;
+        if (this.h.onProgress) this.h.onProgress({ dir: newDir, p: 0 });
+      } else {
+        if (this.h.onProgress) this.h.onProgress(null);
       }
-      const dx = hand.x - this.baseX;
-      if (dx > this.SWIPE_DX || dx < -this.SWIPE_DX) {
-        this.state = 'idle';
-        this.cooldownUntil = now + 900;
-        this.h.onSwipe(dx > 0 ? 'left' : 'right');
+      return;
+    }
+
+    // Gap or weaker frame
+    if (now - this.lastPoseTime > 300) {
+      this.reset();
+    } else {
+      const p = Math.min(1, (now - this.t0) / holdMs);
+      if (p >= 1) {
+        if (now >= this.cooldownUntil) {
+          const firedDir = this.holdingDir;
+          this.holdingDir = null;
+          this.t0 = 0;
+          this.lastPoseTime = 0;
+          this.cooldownUntil = now + 1500;
+          this.unreleased = firedDir;
+          if (this.h.onProgress) this.h.onProgress(null);
+          if (this.h.onThumb) this.h.onThumb(firedDir);
+        } else {
+          if (this.h.onProgress) this.h.onProgress({ dir: this.holdingDir, p: 1 });
+        }
+      } else {
+        if (this.h.onProgress) this.h.onProgress({ dir: this.holdingDir, p });
       }
     }
   }

@@ -255,6 +255,90 @@ const check = (name, ok, detail = '') => results.push({ name, ok: !!ok, detail }
   const note = await C(() => document.querySelector('.lastnote .t') && document.querySelector('.lastnote .t').textContent);
   check('the saved note shows before the next cook', /namak thoda kam/.test(note || ''), note);
 
+  // ---- gesture flow checks
+  // 1. Thumbs up on a plain step goes to the next step.
+  await C(() => {
+    const c = window.__cookAlong;
+    c.startCooking();
+    c.goToStep(4, { force: true });
+    c.handleThumb('up');
+  });
+  const stepAfterUp = await C(() => window.__cookAlong.S.step);
+  check('gesture flow: thumbs up on plain step goes to next step', stepAfterUp === 5, `expected 5, got ${stepAfterUp}`);
+
+  // 2. Thumbs down goes back.
+  await C(() => { window.__cookAlong.handleThumb('down'); });
+  const stepAfterDown = await C(() => window.__cookAlong.S.step);
+  check('gesture flow: thumbs down goes back', stepAfterDown === 4, `expected 4, got ${stepAfterDown}`);
+
+  // 3. Thumbs up with flame-off alert showing clears it and does not change step.
+  await C(() => {
+    const c = window.__cookAlong;
+    c.goToStep(2, { force: true });
+    c.S.alert = { pot: 'cooker', title: 'Turn off the flame' };
+    c.render();
+    c.handleThumb('up');
+  });
+  const alertCleared = await C(() => ({ alert: window.__cookAlong.S.alert, step: window.__cookAlong.S.step }));
+  check('gesture flow: thumbs up with flame-off alert clears alert without changing step', alertCleared.alert === null && alertCleared.step === 2, JSON.stringify(alertCleared));
+
+  // 4. Thumbs down with alert showing does nothing.
+  await C(() => {
+    const c = window.__cookAlong;
+    c.goToStep(2, { force: true });
+    c.S.alert = { pot: 'cooker', title: 'Turn off the flame' };
+    c.render();
+    c.handleThumb('down');
+  });
+  const alertKept = await C(() => ({ hasAlert: !!window.__cookAlong.S.alert, step: window.__cookAlong.S.step }));
+  check('gesture flow: thumbs down with alert showing does nothing', alertKept.hasAlert && alertKept.step === 2, JSON.stringify(alertKept));
+  await C(() => { window.__cookAlong.S.alert = null; });
+
+  // 5. Thumbs up on chopping checklist step ticks one row.
+  await C(() => {
+    const c = window.__cookAlong;
+    c.goToStep(3, { force: true });
+    delete c.S.checked['3:0'];
+    c.render();
+    c.handleThumb('up');
+  });
+  const checklistChecked = await C(() => ({ checked: !!window.__cookAlong.S.checked['3:0'], step: window.__cookAlong.S.step }));
+  check('gesture flow: thumbs up on chopping checklist ticks one row', checklistChecked.checked && checklistChecked.step === 3, JSON.stringify(checklistChecked));
+
+  // ---- exit
+  const exitNo = await C(() => {
+    const c = window.__cookAlong;
+    c.startCooking(); c.goToStep(4, { force: true });
+    const timers = Object.keys(c.S.timers).length;
+    c.askExit(); c.handleIntent({ intent: 'no' }, { kind: 'voice' });
+    return { step: c.S.step, screen: c.S.screen, same: Object.keys(c.S.timers).length === timers };
+  });
+  check('exit: "nahi" keeps cooking on the same step', exitNo.screen === 'cook' && exitNo.step === 4 && exitNo.same, JSON.stringify(exitNo));
+  const exitYes = await C(() => {
+    const c = window.__cookAlong;
+    c.askExit(); c.handleIntent({ intent: 'yes' }, { kind: 'voice' });
+    return { screen: c.S.screen, session: localStorage.getItem('cookalong.session.v1') };
+  });
+  check('exit: "haan" goes to the recipe list and clears the saved cook', exitYes.screen === 'library' && !exitYes.session, JSON.stringify(exitYes));
+  const exitThumb = await C(() => {
+    const c = window.__cookAlong;
+    c.startCooking(); c.goToStep(2, { force: true });
+    c.askExit(); c.handleThumb('up');
+    return c.S.screen;
+  });
+  check('exit: a thumbs up confirms', exitThumb === 'library', exitThumb);
+  await C(() => { const c = window.__cookAlong; c.startCooking(); c.goToStep(1, { force: true }); c.render(); });
+  await page.waitForTimeout(300);
+  const ex = await (await page.$('[data-hold="exit"]')).boundingBox();
+  await page.mouse.move(ex.x + ex.width / 2, ex.y + ex.height / 2);
+  await page.mouse.down(); await page.waitForTimeout(150); await page.mouse.up();
+  const afterExitTap = await C(() => ({ screen: window.__cookAlong.S.screen, asked: !!window.__cookAlong.S.pendingConfirm }));
+  check('exit: a quick tap does nothing', afterExitTap.screen === 'cook' && !afterExitTap.asked, JSON.stringify(afterExitTap));
+  await page.mouse.down(); await page.waitForTimeout(1150); await page.mouse.up();
+  const afterExitHold = await C(() => !!window.__cookAlong.S.pendingConfirm);
+  check('exit: a one-second hold asks to confirm', afterExitHold);
+  await C(() => window.__cookAlong.handleIntent({ intent: 'no' }, { kind: 'voice' }));
+
   // ---- parser
   const cases = {
     'aage': 'next', 'Aage chalo': 'next', 'peeche': 'back', 'ho gaya': 'ack', 'namak kitna dalna hai': 'howmuch',

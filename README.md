@@ -13,7 +13,7 @@ A hands-free cooking mode for a tablet propped 3 to 5 ft from the stove, built f
 * **A two-minute reviewer tour** that walks through a whole cook with simulated voice, whistles and gestures, each labelled as simulated.
 * **First-run setup** that explains the microphone and camera before the browser asks, kitchen tuning saved on the device, and a hard mute (hold the status pills for a second).
 * **Phone and laptop layouts** as well as the tablet one.
-* Everything from the prototype: Hinglish voice commands, palm-and-swipe gestures, elbow holds, cooker whistle counting, timers in fixed colour lanes, rescaling, the tadka called out beat by beat.
+* Everything from the prototype: Hinglish voice commands, thumbs-up hold gestures, elbow holds, cooker whistle counting, timers in fixed colour lanes, rescaling, the tadka called out beat by beat.
 
 No build step. Plain HTML, CSS and JavaScript modules in the browser; two small Node functions on the server.
 
@@ -57,10 +57,10 @@ The static part also runs on GitHub Pages, but GitHub Pages can't run the import
 
 | You want to | Voice | Gesture | Touch (elbow or knuckle) |
 |---|---|---|---|
-| Next step | "aage" / "next" | open palm for ½ s, then swipe left | hold Next for ½ s (near mode) |
-| Previous step | "peeche" / "back" | open palm, then swipe right | hold Back for ½ s (near mode) |
-| Clear an alert | "ho gaya" / "done" | thumbs up | hold anywhere on the alert |
-| Tick off a chopping task | "ho gaya", or name it: "garlic ho gaya" | thumbs up | hold the row for ½ s |
+| Next step | "aage" / "next" | thumbs up held 3 s | hold Next for ½ s (near mode) |
+| Previous step | "peeche" / "back" | thumbs down held 3 s | hold Back for ½ s (near mode) |
+| Clear an alert | "ho gaya" / "done" | thumbs up held 3 s | hold anywhere on the alert |
+| Tick off a chopping task | "ho gaya", or name it: "garlic ho gaya" | thumbs up held 3 s | hold the row for ½ s |
 | Undo the last command | "galat" / "undo" | | |
 | Hear the step again (or replay its video) | "phir se" / "repeat" | | |
 | Pause / play the video | "ruko" / "chalo" | | |
@@ -104,7 +104,7 @@ Safety on the server: links are checked so the server never fetches its own netw
 
 * Voice commands in English and Hinglish (Web Speech API, `en-IN` or `hi-IN`), with a small fixed vocabulary so chatter and the TV can't move the recipe.
 * Read-aloud of every step (speech synthesis). Spoken lines are checked so the app never says one of its own command words.
-* Hand gestures: open palm then swipe, and thumbs up (MediaPipe Gesture Recognizer, on the device).
+* Hand gestures: thumbs up and thumbs down holds (MediaPipe Gesture Recognizer, on the device).
 * Near and away detection from face size and presence (MediaPipe Face Detector, on the device).
 * Noise level and cooker whistle detection (Web Audio, on the device).
 * Timers, collision warnings, the cooker safety wait, rescaling with a preview, undo, the screen staying awake.
@@ -145,7 +145,7 @@ Press **D** (or "Demo · D", bottom left). Keyboard shortcuts:
 | W | a cooker whistle |
 | L | toggle "too loud" |
 | N | toggle near mode |
-| P | palm, then a swipe left |
+| G | thumbs down |
 | T | thumbs up |
 | A | press once to "walk away", again to "come back" |
 | V | play or pause the video |
