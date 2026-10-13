@@ -1,7 +1,7 @@
 // Cook-Along Mode: state, timers, inputs and rendering for the cooking screens.
 // The library, import and review screens live in library.js; the recipe format in recipe.js.
 import { DAL_TADKA, LANES, VESSEL_NAMES, fill, fillSafe, fmtQty, scaledQty, findIngredientByWord, potOf, laneOf, idsInStep, hasWhistles, escapeHtml as esc } from './recipe.js';
-import { createRecognizer, parseCommand, isCoreCommand, speak, stopSpeaking, isSpeaking, spokeWithin, prefetchTts, VOCABULARY } from './voice.js';
+import { createRecognizer, parseCommand, isCoreCommand, speak, stopSpeaking, isSpeaking, spokeWithin, prefetchTts, shippedLines, VOCABULARY } from './voice.js';
 import { startCamera, loadVision, runVisionLoop, GestureInterpreter, NearDetector, startMic, chime, unlockAudio, keepScreenOn } from './sensing.js';
 import { I, svg, vesselIcon } from './icons.js';
 import * as store from './store.js';
@@ -357,7 +357,10 @@ async function prefetchRecipe() {
     if (s.beats) { for (const b of s.beats) if (b.say) jobs.push([safeSpoken(b.say), { hindi: b.sayHi }]); }
     else { const line = safeSpoken(spokenStep(s)); if (line) jobs.push([line, {}]); }
   }
-  const worker = async () => { while (jobs.length) { const [t, o] = jobs.shift(); await prefetchTts(t, o); } };
+  // Shipped files cost nothing; through the voice server, only the first steps (the free quota is small).
+  const shipped = await shippedLines();
+  const queue = jobs.filter(([t, o], k) => k < 3 || shipped.has(`${o.hindi ? 'hi-IN' : 'en-IN'}|${(o.hindi || t).trim()}`));
+  const worker = async () => { while (queue.length) { const [t, o] = queue.shift(); await prefetchTts(t, o); } };
   await Promise.all([worker(), worker()]);
 }
 

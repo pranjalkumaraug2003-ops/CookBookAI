@@ -58,7 +58,8 @@ export default async function handler(req, res) {
     return sendJson(res, 429, { error: 'Too many requests. Try again shortly.', code: 'rate_limited' });
   }
 
-  const key = process.env.GEMINI_API_KEY;
+  // A separate key (its own Google project, so its own free quota) can serve speech alone.
+  const key = process.env.GEMINI_TTS_KEY || process.env.GEMINI_API_KEY;
   if (!key) {
     log('tts', { status: 501, code: 'no_key', length: text.length }, 'error');
     return sendJson(res, 501, { error: 'No model key on the server.', code: 'no_key' });
@@ -101,6 +102,9 @@ export default async function handler(req, res) {
         signal: ctl.signal,
       }).finally(() => clearTimeout(timer));
       if ((resp.status !== 429 && resp.status !== 503) || attempt === 2 || Date.now() - t0 > 30000) break;
+      // Out of today's quota: waiting will not help, so fail fast and let the app use its backup voice.
+      const why = await resp.clone().text().catch(() => '');
+      if (/per ?day|PerDay/i.test(why)) { log('tts', { status: 429, code: 'daily_quota', length: text.length }, 'warn'); break; }
       log('tts', { status: resp.status, code: 'retry', attempt, length: text.length }, 'warn');
       await new Promise((r) => setTimeout(r, 7000 * (attempt + 1)));
     }
@@ -127,6 +131,8 @@ export default async function handler(req, res) {
     res.statusCode = 200;
     res.setHeader('content-type', 'audio/wav');
     res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+    // Keep every generated line on Vercel's CDN, so each line costs quota once, ever.
+    res.setHeader('vercel-cdn-cache-control', 'max-age=31536000');
     res.end(wavBuffer);
   } catch (e) {
     const isTimeout = e.name === 'AbortError';

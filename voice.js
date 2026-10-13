@@ -242,6 +242,8 @@ function manifest() {
   return manifestP;
 }
 
+export async function shippedLines() { return new Set(Object.keys(await manifest())); }
+
 async function ttsUrlFor(text, { hindi } = {}) {
   const speakText = (hindi || text).trim();
   const lang = hindi ? 'hi-IN' : 'en-IN';
