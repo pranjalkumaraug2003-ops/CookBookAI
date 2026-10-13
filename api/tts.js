@@ -46,7 +46,7 @@ export default async function handler(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const text = (url.searchParams.get('t') || '').trim();
   const lang = (url.searchParams.get('l') || 'en-IN').trim();
-  const voice = (url.searchParams.get('v') || process.env.TTS_VOICE || 'Kore').trim();
+  const voice = (url.searchParams.get('v') || process.env.TTS_VOICE || 'Orus').trim();
 
   if (!text || text.length > 400) {
     return sendJson(res, 400, { error: 'Text must be between 1 and 400 characters.', code: 'invalid_text' });

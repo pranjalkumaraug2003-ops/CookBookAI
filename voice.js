@@ -226,7 +226,7 @@ function pickVoice(langPrefix) {
 
 // ---------------------------------------------------------------- TTS cache and playback
 const ttsUrlCache = new Map();
-const CACHE_NAME = 'cookalong-tts-v1';
+const CACHE_NAME = 'cookalong-tts-v2';
 
 const inFlight = new Map();
 
