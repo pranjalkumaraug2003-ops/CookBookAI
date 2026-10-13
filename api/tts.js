@@ -85,18 +85,25 @@ export default async function handler(req, res) {
   };
 
   try {
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 20000);
-    const targetUrl = `${BASE()}/models/${encodeURIComponent(model)}:generateContent`;
-    const resp = await fetch(targetUrl, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-goog-api-key': key,
-      },
-      body: JSON.stringify(body),
-      signal: ctl.signal,
-    }).finally(() => clearTimeout(timer));
+    // The free tier allows only a few speech calls a minute: wait and retry when Gemini says it is busy.
+    let resp;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 20000);
+      const targetUrl = `${BASE()}/models/${encodeURIComponent(model)}:generateContent`;
+      resp = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': key,
+        },
+        body: JSON.stringify(body),
+        signal: ctl.signal,
+      }).finally(() => clearTimeout(timer));
+      if ((resp.status !== 429 && resp.status !== 503) || attempt === 2 || Date.now() - t0 > 30000) break;
+      log('tts', { status: resp.status, code: 'retry', attempt, length: text.length }, 'warn');
+      await new Promise((r) => setTimeout(r, 7000 * (attempt + 1)));
+    }
 
     if (!resp.ok) {
       log('tts', { status: resp.status, code: 'model_failed', length: text.length, voice, model, ms: Date.now() - t0 }, 'error');

@@ -296,7 +296,8 @@ const FAKE_YT = () => {
     const v = await import('/voice.js');
     window.__ttsPromise = v.speak('Rinse the rice thoroughly');
   });
-  await page.waitForTimeout(50);
+  // Speaking starts when the sound starts (not while the line downloads).
+  await page.waitForFunction(async () => (await import('/voice.js')).isSpeaking(), null, { timeout: 5000 }).catch(() => {});
   const speakingDuring = await C(async () => {
     const v = await import('/voice.js');
     return v.isSpeaking();
@@ -309,15 +310,23 @@ const FAKE_YT = () => {
   check('tts: aage said during playback is ignored', stepDuring === 0);
   await C(() => window.__ttsPromise);
 
-  // 3. API returns 500, then fallback speaks
+  // 3. One voice per session: after the natural voice has played, one server error skips that line
+  // (no voice switch); a second error in a row hands every later line to the browser voice.
   await page.route('**/api/tts*', (route) => route.fulfill({ status: 500, body: '{"error":"server error"}' }));
-  await C(async () => {
+  const firstError = await C(async () => {
     const v = await import('/voice.js');
     v.stopSpeaking();
     await v.speak('Boil the water in cooker');
+    return { spoken: (window.__spoken || []).includes('Boil the water in cooker'), state: v.naturalVoiceState() };
   });
-  const fallback500 = await C(() => (window.__spoken || []).includes('Boil the water in cooker'));
-  check('tts: API 500 error falls back to speechSynthesis', fallback500);
+  check('tts: one server error skips the line, no voice switch', !firstError.spoken && firstError.state === 'ok', firstError);
+  await C(async () => {
+    const v = await import('/voice.js');
+    v.stopSpeaking();
+    await v.speak('Boil the water in the big cooker');
+  });
+  const fallback500 = await C(async () => ((window.__spoken || []).includes('Boil the water in the big cooker') && (await import('/voice.js')).naturalVoiceState() === 'broken'));
+  check('tts: two server errors in a row switch to the browser voice for the session', fallback500);
   await page.unroute('**/api/tts*');
 
   // 4. Offline, then fallback speaks

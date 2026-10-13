@@ -1,7 +1,7 @@
 // Offline support. After the first visit the app opens without a network: the app itself, its fonts and the
 // on-device vision models are kept in the browser's cache. Recipe import and YouTube need the network and are
 // never cached.
-const VERSION = 'cookalong-v5';
+const VERSION = 'cookalong-v6';
 const SHELL = [
   './', 'index.html', 'privacy.html', 'styles.css', 'app.js', 'recipe.js', 'store.js', 'library.js', 'parse-text.js', 'icons.js', 'video.js', 'tour.js', 'voice.js', 'sensing.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png',

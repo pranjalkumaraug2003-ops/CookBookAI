@@ -232,8 +232,25 @@ const CACHE_NAME = 'cookalong-tts-v2';
 
 const inFlight = new Map();
 
-// The download gets 30 s (a long step takes Gemini several seconds); speak() only waits 3.5 s for it
-// before using the browser voice, and the download carries on so the line is natural next time.
+// Lines the built-in recipe and the tour always say are shipped as audio files in the natural voice
+// (audio/voice.json maps "lang|text" to a file), so they play at once and cost no quota.
+let manifestP = null;
+function manifest() {
+  if (!manifestP) {
+    manifestP = (typeof fetch === 'function' ? fetch('/audio/voice.json').then((r) => (r.ok ? r.json() : {})) : Promise.resolve({})).catch(() => ({}));
+  }
+  return manifestP;
+}
+
+async function ttsUrlFor(text, { hindi } = {}) {
+  const speakText = (hindi || text).trim();
+  const lang = hindi ? 'hi-IN' : 'en-IN';
+  const m = await manifest();
+  const file = m[`${lang}|${speakText}`];
+  return file ? `/audio/${file}` : `/api/tts?t=${encodeURIComponent(speakText)}&l=${encodeURIComponent(lang)}`;
+}
+
+// A download gets 30 s: a long new line takes Gemini several seconds.
 function fetchTtsBlob(url) {
   if (!inFlight.has(url)) {
     const p = fetchTtsBlobOnce(url).finally(() => inFlight.delete(url));
@@ -241,6 +258,8 @@ function fetchTtsBlob(url) {
   }
   return inFlight.get(url);
 }
+
+class TtsHttpError extends Error {}
 
 async function fetchTtsBlobOnce(url) {
   if (typeof window !== 'undefined' && 'caches' in window) {
@@ -254,7 +273,7 @@ async function fetchTtsBlobOnce(url) {
   const timer = setTimeout(() => ctl.abort(), 30000);
   try {
     const res = await fetch(url, { signal: ctl.signal });
-    if (!res.ok) throw new Error(`TTS HTTP ${res.status}`);
+    if (!res.ok) throw new TtsHttpError(`TTS HTTP ${res.status}`);
     if (typeof window !== 'undefined' && 'caches' in window) {
       try {
         const cache = await caches.open(CACHE_NAME);
@@ -269,33 +288,35 @@ async function fetchTtsBlobOnce(url) {
 
 export async function prefetchTts(text, { hindi } = {}) {
   if (!text || typeof window === 'undefined') return;
-  const speakText = (hindi || text).trim();
-  const lang = hindi ? 'hi-IN' : 'en-IN';
-  const url = `/api/tts?t=${encodeURIComponent(speakText)}&l=${encodeURIComponent(lang)}`;
+  const url = await ttsUrlFor(text, { hindi });
   if (ttsUrlCache.has(url)) return;
   try {
     const blob = await fetchTtsBlob(url);
-    if (blob && !ttsUrlCache.has(url)) {
-      const objectUrl = URL.createObjectURL(blob);
-      ttsUrlCache.set(url, objectUrl);
-    }
+    if (blob && !ttsUrlCache.has(url)) ttsUrlCache.set(url, URL.createObjectURL(blob));
   } catch (_) {
     // Silent prefetch failure
   }
 }
 
+// Waits up to 15 s for a line. A slow line is never handed to a different voice: switching voices
+// mid-cook sounds broken, so a line that is too slow is skipped (it is on the screen anyway).
+const WAIT_MS = 15000;
 async function getTtsAudioUrl(text, { hindi } = {}) {
-  const speakText = (hindi || text).trim();
-  const lang = hindi ? 'hi-IN' : 'en-IN';
-  const url = `/api/tts?t=${encodeURIComponent(speakText)}&l=${encodeURIComponent(lang)}`;
+  const url = await ttsUrlFor(text, { hindi });
   if (ttsUrlCache.has(url)) return ttsUrlCache.get(url);
   const blob = await Promise.race([
     fetchTtsBlob(url),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('tts slow')), 3500)),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('tts slow')), WAIT_MS)),
   ]);
   if (!ttsUrlCache.has(url)) ttsUrlCache.set(url, URL.createObjectURL(blob));
   return ttsUrlCache.get(url);
 }
+
+// One voice per session. "unknown" until a natural line plays; "ok" after; "broken" when the voice
+// server keeps failing, and then the browser voice reads everything for the rest of the session.
+let natural = 'unknown';
+let hardFails = 0;
+export function naturalVoiceState() { return natural; }
 
 function speakWithSpeechSynthesis(text, { hindi, id } = {}) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window) || !text) {
@@ -328,61 +349,55 @@ export function speak(text, { hindi, naturalVoice } = {}) {
   if (!text) return Promise.resolve();
   stopSpeaking();
   const id = ++current;
-  speakingNow = true;
-  startedAt = clock();
 
   const online = typeof navigator === 'undefined' || navigator.onLine !== false;
   const flagAllowed = naturalVoice !== false && (typeof window === 'undefined' || !window.__cookAlong?.S?.flags || window.__cookAlong.S.flags.naturalVoice !== false);
-  const canUseNatural = online && flagAllowed && typeof Audio !== 'undefined';
+  const canUseNatural = online && flagAllowed && typeof Audio !== 'undefined' && natural !== 'broken';
 
   if (!canUseNatural) {
+    speakingNow = true;
+    startedAt = clock();
     return speakWithSpeechSynthesis(text, { hindi, id });
   }
 
   return new Promise((resolve) => {
     let settled = false;
-    const fallback = () => {
+    const finish = () => { if (settled) return; settled = true; if (id === current) markEnded(); resolve(); };
+    // A hard failure (the server said no, or the audio would not play). Before any natural line has
+    // played, commit to the browser voice for the session; after, skip this line and give up on the
+    // natural voice only if it fails twice in a row.
+    const hardFail = () => {
       if (settled) return;
-      settled = true;
-      if (currentAudio) {
-        try { currentAudio.pause(); } catch (_) {}
-        currentAudio = null;
-      }
-      if (id === current) {
+      if (currentAudio) { try { currentAudio.pause(); } catch (_) {} currentAudio = null; }
+      hardFails++;
+      if (natural === 'unknown' || hardFails >= 2) natural = 'broken';
+      if (natural === 'broken' && id === current) {
+        settled = true;
+        speakingNow = true;
+        startedAt = clock();
         speakWithSpeechSynthesis(text, { hindi, id }).then(resolve);
-      } else {
-        markEnded();
-        resolve();
-      }
+      } else finish();
     };
 
     getTtsAudioUrl(text, { hindi }).then((audioUrl) => {
-      if (id !== current) { resolve(); return; }
+      if (id !== current) { settled = true; resolve(); return; }
       try {
         const audio = new Audio(audioUrl);
         currentAudio = audio;
+        audio.onended = () => { if (currentAudio === audio) currentAudio = null; finish(); };
+        audio.onerror = hardFail;
+        audio.onplaying = () => { natural = 'ok'; hardFails = 0; };
+        // Own-voice suppression starts when sound starts, not while waiting for the download.
+        speakingNow = true;
         startedAt = clock();
-
-        audio.onended = () => {
-          if (settled) return;
-          settled = true;
-          if (currentAudio === audio) currentAudio = null;
-          if (id === current) markEnded();
-          resolve();
-        };
-        audio.onerror = () => {
-          fallback();
-        };
-
         const playPromise = audio.play();
-        if (playPromise && playPromise.catch) {
-          playPromise.catch(() => fallback());
-        }
+        if (playPromise && playPromise.catch) playPromise.catch((e) => { if (e && e.name === 'NotAllowedError') finish(); else hardFail(); });
       } catch (_) {
-        fallback();
+        hardFail();
       }
-    }).catch(() => {
-      fallback();
+    }).catch((e) => {
+      if (e instanceof TtsHttpError) hardFail();
+      else finish(); // slow or offline mid-way: skip the line, keep the voice
     });
   });
 }

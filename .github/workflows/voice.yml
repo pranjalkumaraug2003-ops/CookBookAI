@@ -1,0 +1,24 @@
+name: Voice files
+# Run by hand (Actions tab, or `gh workflow run voice.yml`). Fetches every fixed line of the tour and the
+# built-in recipe from the live voice server, saves them under audio/, and commits them.
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Fetch the voice files
+        run: node scripts/fetch-voice.mjs
+      - name: Commit them
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add audio
+          git diff --cached --quiet || (git commit -m "Voice files for the tour and the built-in recipe" && git push)

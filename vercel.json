@@ -32,6 +32,9 @@
   "functions": {
     "api/import.js": {
       "maxDuration": 180
+    },
+    "api/tts.js": {
+      "maxDuration": 60
     }
   }
 }
