@@ -62,6 +62,7 @@ The static part also runs on GitHub Pages, but GitHub Pages can't run the import
 | Clear an alert | "ho gaya" / "done" | thumbs up held 3 s | hold anywhere on the alert |
 | Tick off a chopping task | "ho gaya", or name it: "garlic ho gaya" | thumbs up held 3 s | hold the row for ½ s |
 | Undo the last command | "galat" / "undo" | | |
+| Leave the cook | "cooking band karo" | | hold Exit (top right) for 1 s, then "haan" or a thumbs up |
 | Hear the step again (or replay its video) | "phir se" / "repeat" | | |
 | Pause / play the video | "ruko" / "chalo" | | |
 | Quantity of something | "namak kitna?" | | |
@@ -103,7 +104,7 @@ Safety on the server: links are checked so the server never fetches its own netw
 **Real, working in the browser**
 
 * Voice commands in English and Hinglish (Web Speech API, `en-IN` or `hi-IN`), with a small fixed vocabulary so chatter and the TV can't move the recipe.
-* Read-aloud of every step (speech synthesis). Spoken lines are checked so the app never says one of its own command words.
+* Read-aloud of every step in a natural voice: Gemini speech (voice "Orus") through `api/tts.js`, cached by the CDN and in the browser, and downloaded for the whole recipe while the recipe page is open. If it is slow or offline, the best browser voice reads instead. Spoken lines are checked so the app never says one of its own command words.
 * Hand gestures: thumbs up and thumbs down holds (MediaPipe Gesture Recognizer, on the device).
 * Near and away detection from face size and presence (MediaPipe Face Detector, on the device).
 * Noise level and cooker whistle detection (Web Audio, on the device).
@@ -208,7 +209,7 @@ npx playwright install chromium
 npm test
 ```
 
-183 checks in all. `tests/unit.js` (45 checks: the rule-based reader, validation, page reading, the SSRF guard, draft repairs, logs that never hold the input) runs in Node. Four browser suites run against the local server with a stand-in for Gemini: `tests/flow.cjs` (61 checks on the cooking engine with the dal tadka), `tests/product.cjs` (49: import and review, cooking an imported recipe, resume after reload, offline, the on-device fallback, YouTube mode, first-run setup, the hard mute, the privacy page), `tests/tour.cjs` (7: every tour stop) and `tests/phone.cjs` (21: every screen at 390 × 844). Screenshots of every state land in `tests/shots/`.
+246 checks in all. `tests/unit.js` (93 checks: the rule-based reader, validation, page reading, the SSRF guard, draft repairs, logs that never hold the input, the voice picker, mishearings, the WAV wrapper and the thumbs-up hold logic) runs in Node. Four browser suites run against the local server with a stand-in for Gemini: `tests/flow.cjs` (71 checks on the cooking engine with the dal tadka, including thumbs up and down and the Exit hold), `tests/product.cjs` (54: import and review, cooking an imported recipe, resume after reload, offline, the on-device fallback, YouTube mode, first-run setup, the hard mute, the privacy page, the natural voice and its fallbacks), `tests/tour.cjs` (7: every tour stop) and `tests/phone.cjs` (21: every screen at 390 × 844). Screenshots of every state land in `tests/shots/`.
 
 ---
 
