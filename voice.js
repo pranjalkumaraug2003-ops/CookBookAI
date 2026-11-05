@@ -77,6 +77,10 @@ export function parseCommand(transcript) {
 }
 
 let phrasesLogged = false;
+// Chrome added phrase biasing in 2026, but only some recognition models accept it. When the model doesn't,
+// Chrome refuses to start at all ("phrases-not-supported"), so voice would silently stop working. Remember that
+// and never send phrases again in this page.
+let phrasesUnsupported = false;
 
 export function createRecognizer({ lang = 'en-IN', onAlternatives, onState }) {
   const SR = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
@@ -88,7 +92,7 @@ export function createRecognizer({ lang = 'en-IN', onAlternatives, onState }) {
   rec.maxAlternatives = 3;
 
   try {
-    if (typeof window !== 'undefined' && window.SpeechRecognitionPhrase && 'phrases' in rec) {
+    if (!phrasesUnsupported && typeof window !== 'undefined' && window.SpeechRecognitionPhrase && 'phrases' in rec) {
       rec.phrases = BIASING_WORDS.map((w) => new window.SpeechRecognitionPhrase(w, 5.0));
       if (!phrasesLogged) { phrasesLogged = true; console.log('phrases: on'); }
     } else {
@@ -141,6 +145,17 @@ export function createRecognizer({ lang = 'en-IN', onAlternatives, onState }) {
     }
   };
   rec.onerror = (e) => {
+    if (e.error === 'phrases-not-supported') {
+      // Drop the biasing and listen without it; onend restarts recognition.
+      phrasesUnsupported = true;
+      try { rec.phrases = []; } catch (_) { try { rec.phrases.length = 0; } catch (__) { /* ignore */ } }
+      console.log('phrases: off (this speech model does not support them)');
+      if (wanted && !restarting) {
+        restarting = true;
+        setTimeout(() => { restarting = false; try { rec.start(); } catch (_) { /* already started */ } }, 250);
+      }
+      return;
+    }
     if (e.error === 'not-allowed' || e.error === 'service-not-allowed' || e.error === 'audio-capture') {
       wanted = false;
       onState('blocked', e.error);

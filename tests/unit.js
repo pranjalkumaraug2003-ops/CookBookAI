@@ -250,6 +250,25 @@ recTest.rec.onresult(mockEventInterim);
 recTest.rec.onresult(mockEventFinal);
 check('interim: fires once, final with same intent suppressed', interimDispatched === 1, `dispatched ${interimDispatched} times`);
 
+// Chrome refuses to start when the model can't use phrase biasing: voice must drop the phrases and carry on.
+{
+  globalThis.window.SpeechRecognitionPhrase = class { constructor(phrase, boost) { this.phrase = phrase; this.boost = boost; } };
+  let starts = 0;
+  let states = [];
+  globalThis.window.SpeechRecognition = class PhraseSR {
+    constructor() { this.phrases = []; }
+    start() { starts++; if (this.phrases.length) setTimeout(() => this.onerror({ error: 'phrases-not-supported' }), 0); }
+    stop() {}
+  };
+  const r = createRecognizer({ lang: 'en-IN', onAlternatives: () => {}, onState: (st) => states.push(st) });
+  const hadPhrases = r.rec.phrases.length > 0;
+  r.start();
+  await new Promise((res) => setTimeout(res, 400));
+  check('phrases: unsupported model drops phrases and restarts listening', hadPhrases && r.rec.phrases.length === 0 && starts >= 2 && !states.includes('error'), { hadPhrases, left: r.rec.phrases.length, starts, states });
+  const r2 = createRecognizer({ lang: 'en-IN', onAlternatives: () => {}, onState: () => {} });
+  check('phrases: not sent again after the model refused them', r2.rec.phrases.length === 0, r2.rec.phrases.length);
+}
+
 const failed = results.filter((r) => !r.ok);
 console.log(results.map((r) => `${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.ok ? '' : `  [${r.detail}]`}`).join('\n'));
 console.log(`\n${results.length - failed.length}/${results.length} unit checks passed`);
