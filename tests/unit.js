@@ -9,7 +9,7 @@ import { normalizeRecipe, DAL_TADKA, fmtQty, scaledQty } from '../recipe.js';
 import { extractRecipe, pageText, isoMinutes, assertPublicUrl, recipeToText } from '../api/_lib/page.js';
 import { draftToRecipe } from '../api/_lib/convert.js';
 import { toOpenApi, DRAFT_SCHEMA } from '../api/_lib/gemini.js';
-import { parseCommand, chooseVoice, isCoreCommand, createRecognizer } from '../voice.js';
+import { parseCommand, chooseVoice, isCoreCommand, createRecognizer, bargeInPhrase } from '../voice.js';
 import { GestureInterpreter, pickHand } from '../sensing.js';
 import { describeInput } from '../api/_lib/log.js';
 import { pcmToWav } from '../api/_lib/wav.js';
@@ -267,6 +267,27 @@ check('interim: fires once, final with same intent suppressed', interimDispatche
   check('phrases: unsupported model drops phrases and restarts listening', hadPhrases && r.rec.phrases.length === 0 && starts >= 2 && !states.includes('error'), { hadPhrases, left: r.rec.phrases.length, starts, states });
   const r2 = createRecognizer({ lang: 'en-IN', onAlternatives: () => {}, onState: () => {} });
   check('phrases: not sent again after the model refused them', r2.rec.phrases.length === 0, r2.rec.phrases.length);
+}
+
+// Barge-in: a short command from the cook counts while the app talks; the app's own words don't.
+{
+  const line = 'Pressure cook the dal: 3 whistles. Dal, 3 cups water, ½ teaspoon haldi. Welcome back';
+  check('barge-in: "aage" alone counts', bargeInPhrase('aage', line) === 'aage');
+  check('barge-in: the cook\'s "aage" glued to the app\'s words counts', bargeInPhrase('3 cups water aage', line) === 'aage');
+  check('barge-in: a command word the app itself just said does not count', bargeInPhrase('back', line) === null);
+  check('barge-in: the app\'s own sentence does not count', bargeInPhrase('pressure cook the dal', line) === null);
+  check('barge-in: Hinglish and English both work', bargeInPhrase('peeche', line) === 'peeche' && bargeInPhrase('next.', line) === 'next');
+}
+
+// Interim results: Chrome repeats the same words while you speak; one command must move one step.
+{
+  let n = 0;
+  globalThis.window.SpeechRecognition = class OnceSR { start() {} stop() {} };
+  const r = createRecognizer({ lang: 'en-IN', onAlternatives: () => { n++; }, onState: () => {} });
+  const interim = { resultIndex: 0, results: [Object.assign([{ transcript: 'aage', confidence: 0.9 }], { isFinal: false })] };
+  r.rec.onresult(interim); r.rec.onresult(interim); r.rec.onresult(interim);
+  r.rec.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: 'aage', confidence: 0.95 }], { isFinal: true })] });
+  check('interim: the same words repeated fire one command', n === 1, String(n));
 }
 
 const failed = results.filter((r) => !r.ok);

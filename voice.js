@@ -107,7 +107,8 @@ export function createRecognizer({ lang = 'en-IN', onAlternatives, onState }) {
   let suppressedIntent = null;
   let suppressedUntil = 0;
 
-  rec.onstart = () => onState('listening');
+  let firedResult = -1;
+  rec.onstart = () => { firedResult = -1; onState('listening'); };
   rec.onresult = (e) => {
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const r = e.results[i];
@@ -122,9 +123,11 @@ export function createRecognizer({ lang = 'en-IN', onAlternatives, onState }) {
       const conf = confidences[0] ?? 1;
 
       if (!r.isFinal) {
-        if (words.length <= 3 && conf >= 0.6) {
+        // Chrome sends the same words again and again while you speak; act on them once.
+        if (i !== firedResult && words.length <= 3 && conf >= 0.6) {
           const cmd = parseCommand(primary);
           if (cmd && isCoreCommand(primary)) {
+            firedResult = i;
             suppressedIntent = cmd.intent;
             suppressedUntil = Date.now() + 2000;
             onAlternatives(alts, confidences);
@@ -184,6 +187,8 @@ let startedAt = 0;
 let endedAt = -1e9;
 let current = 0;
 let currentAudio = null;
+let spokenText = '';
+let settleCurrent = null;
 const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 function markEnded() {
@@ -194,11 +199,31 @@ function markEnded() {
 // Some browsers never fire "end" for an utterance, so after a grace period trust the engine's own flag.
 export function isSpeaking() {
   if (speakingNow && currentAudio) {
-    if (currentAudio.ended) markEnded();
+    // Safety nets so the app can never think it is still talking (which would ignore the cook):
+    // the line ended, the audio stopped on its own, or it has run well past its length.
+    const a = currentAudio;
+    const elapsed = clock() - startedAt;
+    const tooLong = Number.isFinite(a.duration) && a.duration > 0 && elapsed > (a.duration + 3) * 1000;
+    if (a.ended || (a.paused && elapsed > 2000) || tooLong || elapsed > 60000) markEnded();
     return speakingNow;
   }
   if (speakingNow && !currentAudio && clock() - startedAt > 1500 && typeof window !== 'undefined' && 'speechSynthesis' in window && !speechSynthesis.speaking && !speechSynthesis.pending) markEnded();
   return speakingNow;
+}
+
+// Barge-in: while the app is talking, a short command from the cook still counts, so the cook never has to
+// wait for a long line to finish. Returns the core command to act on, or null. It counts only when the whole
+// utterance is a core command, or the utterance ends with one (the recogniser often glues the app's own words
+// to the cook's), and only when the app's own line doesn't contain that command, so it can't hear itself.
+export function bargeInPhrase(transcript, said = spokenText) {
+  const words = String(transcript || '').toLowerCase().replace(/[.,!?।"“”']/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  if (!words.length) return null;
+  const own = ` ${String(said || '').toLowerCase().replace(/[.,!?।"“”':;()]/g, ' ').replace(/\s+/g, ' ')} `;
+  const tries = [words.join(' '), words.slice(-2).join(' '), words.slice(-1).join(' ')];
+  for (const t of tries) {
+    if (t && isCoreCommand(t) && !own.includes(` ${t} `)) return t;
+  }
+  return null;
 }
 
 // True while the app talks and for a moment after: recognition results can arrive a second after the audio.
@@ -373,6 +398,7 @@ export function speak(text, { hindi, naturalVoice } = {}) {
   if (!text) return Promise.resolve();
   stopSpeaking();
   const id = ++current;
+  spokenText = `${text} ${hindi || ''}`;
 
   const online = typeof navigator === 'undefined' || navigator.onLine !== false;
   const flagAllowed = naturalVoice !== false && (typeof window === 'undefined' || !window.__cookAlong?.S?.flags || window.__cookAlong.S.flags.naturalVoice !== false);
@@ -387,6 +413,7 @@ export function speak(text, { hindi, naturalVoice } = {}) {
   return new Promise((resolve) => {
     let settled = false;
     const finish = () => { if (settled) return; settled = true; if (id === current) markEnded(); resolve(); };
+    settleCurrent = () => { if (!settled) { settled = true; resolve(); } };
     // A hard failure (the server said no, or the audio would not play). Before any natural line has
     // played, commit to the browser voice for the session; after, skip this line and give up on the
     // natural voice only if it fails twice in a row.
@@ -426,6 +453,7 @@ export function speak(text, { hindi, naturalVoice } = {}) {
 }
 
 export function stopSpeaking() {
+  if (settleCurrent) { const s = settleCurrent; settleCurrent = null; s(); }
   current++;
   if (currentAudio) {
     try {

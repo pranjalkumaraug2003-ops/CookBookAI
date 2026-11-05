@@ -1,7 +1,7 @@
 // Cook-Along Mode: state, timers, inputs and rendering for the cooking screens.
 // The library, import and review screens live in library.js; the recipe format in recipe.js.
 import { DAL_TADKA, LANES, VESSEL_NAMES, fill, fillSafe, fmtQty, scaledQty, findIngredientByWord, potOf, laneOf, idsInStep, hasWhistles, escapeHtml as esc } from './recipe.js';
-import { createRecognizer, parseCommand, isCoreCommand, speak, stopSpeaking, isSpeaking, spokeWithin, prefetchTts, shippedLines, VOCABULARY } from './voice.js';
+import { createRecognizer, parseCommand, isCoreCommand, bargeInPhrase, speak, stopSpeaking, isSpeaking, spokeWithin, prefetchTts, shippedLines, VOCABULARY } from './voice.js';
 import { startCamera, loadVision, runVisionLoop, GestureInterpreter, NearDetector, startMic, chime, unlockAudio, keepScreenOn } from './sensing.js';
 import { I, svg, vesselIcon } from './icons.js';
 import * as store from './store.js';
@@ -705,12 +705,24 @@ function onTranscript(alts, confidences = []) {
   for (let idx = 0; idx < alts.length; idx++) {
     const a = alts[idx];
     const conf = typeof confidences[idx] === 'number' ? confidences[idx] : 1;
-    const cmd = parseCommand(a);
+    let cmd = parseCommand(a);
+    let heardText = a;
+    // While the app is talking, only a short command from the cook counts (barge-in): it stops the voice
+    // and acts. Anything longer is treated as the app hearing itself.
+    if (ownVoice && (!cmd || !BARGE_IN.includes(cmd.intent))) {
+      const short = bargeInPhrase(a);
+      if (!short) { if (cmd) { log(`ignored while speaking: “${a}”`); return; } continue; }
+      cmd = parseCommand(short);
+      heardText = short;
+      if (!cmd) continue;
+      if (videoPlaying() && !['pause', 'stop'].includes(cmd.intent)) { log(`ignored while the video plays: “${a}”`); return; }
+      stopSpeaking();
+      log(`barge-in while speaking: “${short}”`);
+    }
     if (!cmd) continue;
-    if (ownVoice && !BARGE_IN.includes(cmd.intent)) { log(`ignored while speaking: “${a}”`); return; }
     if (videoPlaying() && !['pause', 'stop'].includes(cmd.intent)) { log(`ignored while the video plays: “${a}”`); return; }
     const loudOk = ['pause', 'stop'].includes(cmd.intent) || (cmd.intent === 'ack' && S.alert);
-    const isCore = isCoreCommand(a);
+    const isCore = isCoreCommand(heardText);
     const loudAccepted = loudOk || conf >= 0.7 || isCore;
     if (isLoud() && !loudAccepted) { log(`ignored: too loud (conf ${Number(conf.toFixed(2))})`); return; }
     handleIntent(cmd, { kind: 'voice', word: cmd.word, heard: cmd.heard });

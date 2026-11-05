@@ -294,7 +294,7 @@ const FAKE_YT = () => {
   // 1. Natural voice plays and speaking is true during playback
   await C(async () => {
     const v = await import('/voice.js');
-    window.__ttsPromise = v.speak('Rinse the rice thoroughly');
+    window.__ttsPromise = v.speak('Welcome back, rinse the rice thoroughly');
   });
   // Speaking starts when the sound starts (not while the line downloads).
   await page.waitForFunction(async () => (await import('/voice.js')).isSpeaking(), null, { timeout: 5000 }).catch(() => {});
@@ -304,11 +304,16 @@ const FAKE_YT = () => {
   });
   check('tts: natural voice plays and isSpeaking is true during playback', speakingDuring);
 
-  // 2. "aage" said during playback is ignored
+  // 2. While it talks, the app's own words are ignored, but a short command from the cook barges in.
+  await C(() => window.__cookAlong.onTranscript(['welcome back']));
+  const stepOwn = await C(() => window.__cookAlong.S.step);
+  check('tts: the app hearing its own line ("welcome back") does not go back', stepOwn === 0, String(stepOwn));
   await C(() => window.__cookAlong.onTranscript(['aage']));
-  const stepDuring = await C(() => window.__cookAlong.S.step);
-  check('tts: aage said during playback is ignored', stepDuring === 0);
-  await C(() => window.__ttsPromise);
+  const barge = await C(async () => {
+    const settled = await Promise.race([window.__ttsPromise.then(() => true), new Promise((r) => setTimeout(() => r(false), 1500))]);
+    return { step: window.__cookAlong.S.step, settled };
+  });
+  check('tts: "aage" while the app talks stops that line and moves on (barge-in)', barge.step === 1 && barge.settled, JSON.stringify(barge));
 
   // 3. One voice per session: after the natural voice has played, one server error skips that line
   // (no voice switch); a second error in a row hands every later line to the browser voice.
